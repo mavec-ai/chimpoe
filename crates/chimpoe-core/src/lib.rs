@@ -1,14 +1,24 @@
-pub fn add(left: u64, right: u64) -> u64 {
-    left + right
-}
+pub mod config;
+pub mod error;
+pub mod traits;
+pub mod types;
 
-#[cfg(test)]
-mod tests {
-    use super::*;
+pub mod embed;
+pub mod llm;
+pub mod pipeline;
+pub mod store;
+pub mod vector;
 
-    #[test]
-    fn it_works() {
-        let result = add(2, 2);
-        assert_eq!(result, 4);
-    }
-}
+mod chimpoe;
+
+pub use config::Config;
+pub use error::{ChimpoeError, Result};
+pub use traits::*;
+pub use types::*;
+
+pub use chimpoe::{Chimpoe, MemoryHit, SearchResult};
+pub use embed::OllamaEmbedder;
+pub use llm::OllamaLlm;
+pub use pipeline::{Compressor, Synthesizer};
+pub use store::SqliteStore;
+pub use vector::InMemoryVector;
