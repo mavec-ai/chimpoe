@@ -5,7 +5,7 @@ use crate::types::{Dialogue, MemoryEntry};
 use std::sync::Arc;
 
 const EXTRACTION_PROMPT: &str = r#"
-Your task is to extract all valuable information from the following dialogues and convert them into structured memory entries.
+Your task is to extract structured memory entries from the following dialogues.
 
 {previous_context}
 
@@ -13,15 +13,29 @@ Your task is to extract all valuable information from the following dialogues an
 {conversation}
 
 [Requirements]
-1. **Complete Coverage**: Generate enough memory entries to ensure ALL information in the dialogues is captured
-2. **Force Disambiguation**: Absolutely PROHIBIT using pronouns (he, she, it, they, this, that) and relative time (yesterday, today, last week, tomorrow)
-3. **Lossless Information**: Each entry's lossless_restatement must be a complete, independent, understandable sentence
-4. **Precise Extraction**:
+1. **Complete Coverage**: Generate enough memory entries to capture ALL valuable information from the dialogues
+2. **Language Preservation (CRITICAL)**:
+   - Output lossless_restatement in THE EXACT SAME LANGUAGE as dialogue
+   - NEVER translate, convert, or change language
+   - Indonesian input → Indonesian output
+   - English input → English output
+   - WRONG: "Saya pergi ke pasar" → "I went to the market" (TRANSLATED!)
+   - RIGHT: "Saya pergi ke pasar" → "Saya pergi ke pasar pagi ini" (SAME LANGUAGE)
+3. **No Hallucination (CRITICAL)**:
+   - ONLY information EXPLICITLY stated in dialogue
+   - Do NOT add names not mentioned (keep pronouns as-is, do NOT invent names)
+   - Do NOT infer, assume, or guess
+   - When in doubt, omit
+4. **Lossless Information**: Each lossless_restatement must be complete, independent, and understandable without context
+5. **Force Disambiguation**: NO pronouns (he, she, it, they, this, that). Use actual names.
+6. **Time Reference**: Preserve time expressions AS-IS from original. Do NOT resolve relative time.
+7. **Precise Metadata**:
    - keywords: Core keywords (names, places, entities, topic words)
-   - persons: All person names mentioned
-   - entities: Companies, products, organizations, etc.
-   - location: Specific location name (if mentioned)
-   - topic: The topic of this information
+   - persons: ONLY proper names (Alice, Bob). SKIP pronouns.
+   - location: ONLY specific places (Starbucks, Jakarta). SKIP vague references (here, there).
+   - entities: ONLY clear named entities (Google, iPhone). SKIP generic terms.
+   - topic: Brief topic/category of this information (e.g., "Meeting arrangement", "Travel plan")
+   - If unclear or vague → leave empty, do NOT guess.
 
 [Output Format]
 Return a JSON object with a "memories" array:
@@ -30,7 +44,7 @@ Return a JSON object with a "memories" array:
 {{
   "memories": [
     {{
-      "lossless_restatement": "Complete unambiguous restatement (must include all subjects, objects, time, location, etc.)",
+      "lossless_restatement": "Complete unambiguous restatement in the SAME LANGUAGE as dialogue",
       "keywords": ["keyword1", "keyword2"],
       "persons": ["name1", "name2"],
       "entities": ["entity1", "entity2"],
@@ -41,7 +55,7 @@ Return a JSON object with a "memories" array:
 }}
 ```
 
-[Example]
+[Example - FOR FORMAT REFERENCE ONLY, DO NOT COPY THE CONTENT]
 Dialogues:
 [2025-11-15T14:30:00] Alice: Bob, let's meet at Starbucks tomorrow at 2pm to discuss the new product
 [2025-11-15T14:31:00] Bob: Okay, I'll prepare the materials
@@ -51,7 +65,7 @@ Output:
 {{
   "memories": [
     {{
-      "lossless_restatement": "Alice suggested at 2025-11-15T14:30:00 to meet with Bob at Starbucks on 2025-11-16T14:00:00 to discuss the new product.",
+      "lossless_restatement": "Alice suggested at 2025-11-15T14:30:00 to meet with Bob at Starbucks tomorrow at 2pm to discuss the new product.",
       "keywords": ["Alice", "Bob", "Starbucks", "new product", "meeting"],
       "persons": ["Alice", "Bob"],
       "entities": ["new product"],
@@ -69,6 +83,11 @@ Output:
   ]
 }}
 ```
+
+IMPORTANT: 
+- Process the ACTUAL dialogues in [Current Window Dialogues] above.
+- The examples show FORMAT only - do not copy their content.
+- Output in THE SAME LANGUAGE as the dialogue (Indonesian → Indonesian, English → English).
 
 Return ONLY valid JSON, no markdown or explanation outside the JSON structure.
 "#;

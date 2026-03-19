@@ -1,0 +1,25 @@
+[package]
+name = "chimpoe-cli"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+description.workspace = true
+
+[[bin]]
+name = "chimpoe"
+path = "src/main.rs"
+
+[dependencies]
+chimpoe-core = { path = "../chimpoe-core" }
+
+tokio.workspace = true
+clap.workspace = true
+serde.workspace = true
+toml.workspace = true
+anyhow.workspace = true
+dirs.workspace = true
+colored.workspace = true
+tabled.workspace = true
+reqwest.workspace = true
+serde_json.workspace = true

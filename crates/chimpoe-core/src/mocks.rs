@@ -4,6 +4,8 @@ use crate::types::{MemoryEntry, StructuredSearchParams};
 use async_trait::async_trait;
 use std::sync::{Arc, Mutex};
 
+type MockEntryStore = Vec<(MemoryEntry, Vec<f32>)>;
+
 pub struct MockEmbedder {
     dimension: usize,
 }
@@ -59,7 +61,7 @@ impl LlmClient for MockLlmClient {
     ) -> LlmResult<serde_json::Value> {
         let mut count = self.call_count.lock().unwrap();
         *count += 1;
-        let idx = (*count - 1) as usize;
+        let idx = *count - 1;
 
         let responses = self.responses.lock().unwrap();
         if idx < responses.len() {
@@ -73,7 +75,7 @@ impl LlmClient for MockLlmClient {
 }
 
 pub struct MockVectorStore {
-    entries: Arc<Mutex<Vec<(MemoryEntry, Vec<f32>)>>>,
+    entries: Arc<Mutex<MockEntryStore>>,
 }
 
 impl MockVectorStore {

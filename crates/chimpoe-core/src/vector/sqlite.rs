@@ -687,7 +687,7 @@ mod tests {
         let vector = make_vector(64);
 
         store
-            .add_entries(&[entry.clone()], &[vector])
+            .add_entries(std::slice::from_ref(&entry), &[vector])
             .await
             .unwrap();
 
