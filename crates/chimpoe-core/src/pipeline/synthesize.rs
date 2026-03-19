@@ -148,3 +148,180 @@ impl Synthesizer {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::config::RetrievalConfig;
+
+    fn test_config() -> PipelineConfig {
+        PipelineConfig {
+            window_size: 10,
+            overlap_size: 2,
+            similarity_threshold: 0.5,
+            retrieval: RetrievalConfig::default(),
+        }
+    }
+
+    fn make_entry(text: &str, keywords: Vec<&str>) -> MemoryEntry {
+        MemoryEntry::new(text.to_string())
+            .with_keywords(keywords.into_iter().map(String::from).collect())
+    }
+
+    #[test]
+    fn test_synthesize_empty_input() {
+        let synth = Synthesizer::new(test_config());
+        let result = synth.synthesize(Vec::new()).unwrap();
+        assert!(result.is_empty());
+    }
+
+    #[test]
+    fn test_synthesize_single_entry() {
+        let synth = Synthesizer::new(test_config());
+        let entry = make_entry("User likes pizza", vec!["pizza", "food"]);
+        let result = synth.synthesize(vec![entry.clone()]).unwrap();
+        assert_eq!(result.len(), 1);
+        assert_eq!(result[0].lossless_restatement, "User likes pizza");
+    }
+
+    #[test]
+    fn test_deduplicate_exact_duplicates() {
+        let synth = Synthesizer::new(test_config());
+        let entry1 = make_entry("User likes pizza", vec!["pizza"]);
+        let entry2 = make_entry("User likes pizza", vec!["food"]);
+
+        let result = synth.synthesize(vec![entry1, entry2]).unwrap();
+        assert_eq!(result.len(), 1);
+    }
+
+    #[test]
+    fn test_deduplicate_case_insensitive() {
+        let synth = Synthesizer::new(test_config());
+        let entry1 = make_entry("User likes pizza", vec!["pizza"]);
+        let entry2 = make_entry("USER LIKES PIZZA", vec!["food"]);
+
+        let result = synth.synthesize(vec![entry1, entry2]).unwrap();
+        assert_eq!(result.len(), 1);
+    }
+
+    #[test]
+    fn test_merge_similar_entries() {
+        let config = PipelineConfig {
+            similarity_threshold: 0.3,
+            ..test_config()
+        };
+        let synth = Synthesizer::new(config);
+
+        let entry1 = make_entry("User likes pizza", vec!["pizza", "food", "italian"]);
+        let entry2 = make_entry("User enjoys pasta", vec!["pasta", "food", "italian"]);
+
+        let result = synth.synthesize(vec![entry1, entry2]).unwrap();
+        assert_eq!(result.len(), 1);
+
+        let merged = &result[0];
+        assert!(merged.keywords.contains(&"pizza".to_string()));
+        assert!(merged.keywords.contains(&"pasta".to_string()));
+        assert!(merged.keywords.contains(&"food".to_string()));
+    }
+
+    #[test]
+    fn test_no_merge_dissimilar_entries() {
+        let synth = Synthesizer::new(test_config());
+
+        let entry1 = make_entry("User likes pizza", vec!["pizza", "food"]);
+        let entry2 = make_entry("User works at Google", vec!["google", "work"]);
+
+        let result = synth.synthesize(vec![entry1, entry2]).unwrap();
+        assert_eq!(result.len(), 2);
+    }
+
+    #[test]
+    fn test_merge_cluster_combines_persons_and_entities() {
+        let config = PipelineConfig {
+            similarity_threshold: 0.5,
+            ..test_config()
+        };
+        let synth = Synthesizer::new(config);
+
+        let entry1 = MemoryEntry::new("Met John at cafe".to_string())
+            .with_keywords(vec!["cafe".to_string(), "meeting".to_string()])
+            .with_persons(vec!["John".to_string()]);
+
+        let entry2 = MemoryEntry::new("Met Mary at cafe".to_string())
+            .with_keywords(vec!["cafe".to_string(), "meeting".to_string()])
+            .with_persons(vec!["Mary".to_string()]);
+
+        let result = synth.synthesize(vec![entry1, entry2]).unwrap();
+        assert_eq!(result.len(), 1);
+
+        let merged = &result[0];
+        assert!(merged.persons.contains(&"John".to_string()));
+        assert!(merged.persons.contains(&"Mary".to_string()));
+    }
+
+    #[test]
+    fn test_merge_keeps_longest_statement() {
+        let config = PipelineConfig {
+            similarity_threshold: 0.5,
+            ..test_config()
+        };
+        let synth = Synthesizer::new(config);
+
+        let short = make_entry("Short", vec!["shared", "keywords"]);
+        let long = make_entry(
+            "This is a much longer statement with more details",
+            vec!["shared", "keywords"],
+        );
+
+        let result = synth.synthesize(vec![short, long]).unwrap();
+        assert_eq!(result.len(), 1);
+        assert!(
+            result[0]
+                .lossless_restatement
+                .starts_with("This is a much longer")
+        );
+    }
+
+    #[test]
+    fn test_jaccard_similarity_identical_sets() {
+        let synth = Synthesizer::new(test_config());
+        let a = vec!["a".to_string(), "b".to_string(), "c".to_string()];
+        let b = vec!["a".to_string(), "b".to_string(), "c".to_string()];
+
+        let sim = synth.jaccard_similarity(&a, &b);
+        assert!((sim - 1.0).abs() < f32::EPSILON);
+    }
+
+    #[test]
+    fn test_jaccard_similarity_no_overlap() {
+        let synth = Synthesizer::new(test_config());
+        let a = vec!["a".to_string(), "b".to_string()];
+        let b = vec!["c".to_string(), "d".to_string()];
+
+        let sim = synth.jaccard_similarity(&a, &b);
+        assert!((sim - 0.0).abs() < f32::EPSILON);
+    }
+
+    #[test]
+    fn test_jaccard_similarity_half_overlap() {
+        let synth = Synthesizer::new(test_config());
+        let a = vec!["a".to_string(), "b".to_string()];
+        let b = vec!["b".to_string(), "c".to_string()];
+
+        let sim = synth.jaccard_similarity(&a, &b);
+        assert!((sim - 0.3333333).abs() < 0.001);
+    }
+
+    #[test]
+    fn test_jaccard_similarity_empty_sets() {
+        let synth = Synthesizer::new(test_config());
+        let a: Vec<String> = Vec::new();
+        let b = vec!["a".to_string()];
+
+        let sim = synth.jaccard_similarity(&a, &b);
+        assert!((sim - 0.0).abs() < f32::EPSILON);
+
+        let sim = synth.jaccard_similarity(&b, &a);
+        assert!((sim - 0.0).abs() < f32::EPSILON);
+    }
+}

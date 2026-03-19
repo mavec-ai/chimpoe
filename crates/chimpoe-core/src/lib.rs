@@ -10,7 +10,10 @@ pub mod vector;
 
 mod chimpoe;
 
-pub use config::Config;
+#[cfg(test)]
+mod mocks;
+
+pub use config::{Config, RetrievalConfig};
 pub use error::{ChimpoeError, Result};
 pub use traits::*;
 pub use types::*;

@@ -410,3 +410,295 @@ impl VectorStore for SqliteVector {
             .collect()
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::traits::VectorStore;
+
+    fn make_entry(text: &str) -> MemoryEntry {
+        MemoryEntry::new(text.to_string()).with_keywords(vec!["test".to_string()])
+    }
+
+    fn make_vector(dim: usize) -> Vec<f32> {
+        vec![0.1; dim]
+    }
+
+    #[tokio::test]
+    async fn test_in_memory_creation() {
+        let store = SqliteVector::in_memory(128).unwrap();
+        assert_eq!(store.count().await.unwrap(), 0);
+    }
+
+    #[tokio::test]
+    async fn test_add_single_entry() {
+        let store = SqliteVector::in_memory(64).unwrap();
+        let entry = make_entry("Test memory");
+        let vector = make_vector(64);
+
+        store.add_entries(&[entry], &[vector]).await.unwrap();
+        assert_eq!(store.count().await.unwrap(), 1);
+    }
+
+    #[tokio::test]
+    async fn test_add_multiple_entries() {
+        let store = SqliteVector::in_memory(64).unwrap();
+        let entries = vec![
+            make_entry("Memory 1"),
+            make_entry("Memory 2"),
+            make_entry("Memory 3"),
+        ];
+        let vectors = vec![make_vector(64), make_vector(64), make_vector(64)];
+
+        store.add_entries(&entries, &vectors).await.unwrap();
+        assert_eq!(store.count().await.unwrap(), 3);
+    }
+
+    #[tokio::test]
+    async fn test_add_entries_mismatch_length() {
+        let store = SqliteVector::in_memory(64).unwrap();
+        let entries = vec![make_entry("Memory 1")];
+        let vectors = vec![make_vector(64), make_vector(64)];
+
+        let result = store.add_entries(&entries, &vectors).await;
+        assert!(result.is_err());
+    }
+
+    #[tokio::test]
+    async fn test_add_entry_dimension_mismatch() {
+        let store = SqliteVector::in_memory(64).unwrap();
+        let entry = make_entry("Test");
+        let wrong_dim_vector = vec![0.1; 32];
+
+        let result = store.add_entries(&[entry], &[wrong_dim_vector]).await;
+        assert!(result.is_err());
+    }
+
+    #[tokio::test]
+    async fn test_semantic_search_empty() {
+        let store = SqliteVector::in_memory(64).unwrap();
+        let query = make_vector(64);
+
+        let results = store.semantic_search(&query, 5).await.unwrap();
+        assert!(results.is_empty());
+    }
+
+    #[tokio::test]
+    async fn test_semantic_search_returns_results() {
+        let store = SqliteVector::in_memory(64).unwrap();
+        let entry = make_entry("Semantic test memory");
+        let vector = make_vector(64);
+
+        store.add_entries(&[entry], &[vector]).await.unwrap();
+
+        let query = make_vector(64);
+        let results = store.semantic_search(&query, 5).await.unwrap();
+        assert_eq!(results.len(), 1);
+        assert_eq!(results[0].lossless_restatement, "Semantic test memory");
+    }
+
+    #[tokio::test]
+    async fn test_semantic_search_respects_top_k() {
+        let store = SqliteVector::in_memory(64).unwrap();
+        let entries: Vec<MemoryEntry> = (0..10)
+            .map(|i| make_entry(&format!("Memory {}", i)))
+            .collect();
+        let vectors: Vec<Vec<f32>> = (0..10).map(|_| make_vector(64)).collect();
+
+        store.add_entries(&entries, &vectors).await.unwrap();
+
+        let query = make_vector(64);
+        let results = store.semantic_search(&query, 3).await.unwrap();
+        assert_eq!(results.len(), 3);
+    }
+
+    #[tokio::test]
+    async fn test_keyword_search_empty_store() {
+        let store = SqliteVector::in_memory(64).unwrap();
+
+        let results = store
+            .keyword_search(&["test".to_string()], 5)
+            .await
+            .unwrap();
+        assert!(results.is_empty());
+    }
+
+    #[tokio::test]
+    async fn test_keyword_search_empty_keywords() {
+        let store = SqliteVector::in_memory(64).unwrap();
+        let entry = make_entry("Test memory");
+        let vector = make_vector(64);
+
+        store.add_entries(&[entry], &[vector]).await.unwrap();
+
+        let results = store.keyword_search(&[], 5).await.unwrap();
+        assert!(results.is_empty());
+    }
+
+    #[tokio::test]
+    async fn test_keyword_search_finds_match() {
+        let store = SqliteVector::in_memory(64).unwrap();
+        let entry = MemoryEntry::new("User loves programming in Rust".to_string())
+            .with_keywords(vec!["programming".to_string(), "rust".to_string()]);
+        let vector = make_vector(64);
+
+        store.add_entries(&[entry], &[vector]).await.unwrap();
+
+        let results = store
+            .keyword_search(&["programming".to_string()], 5)
+            .await
+            .unwrap();
+        assert_eq!(results.len(), 1);
+    }
+
+    #[tokio::test]
+    async fn test_keyword_search_no_match() {
+        let store = SqliteVector::in_memory(64).unwrap();
+        let entry = make_entry("User likes pizza");
+        let vector = make_vector(64);
+
+        store.add_entries(&[entry], &[vector]).await.unwrap();
+
+        let results = store
+            .keyword_search(&["unrelated".to_string()], 5)
+            .await
+            .unwrap();
+        assert!(results.is_empty());
+    }
+
+    #[tokio::test]
+    async fn test_structured_search_empty_params() {
+        let store = SqliteVector::in_memory(64).unwrap();
+        let entry = MemoryEntry::new("Test".to_string()).with_persons(vec!["Alice".to_string()]);
+        let vector = make_vector(64);
+
+        store.add_entries(&[entry], &[vector]).await.unwrap();
+
+        let params = StructuredSearchParams::default();
+        let results = store.structured_search(&params, 5).await.unwrap();
+        assert!(results.is_empty());
+    }
+
+    #[tokio::test]
+    async fn test_structured_search_by_person() {
+        let store = SqliteVector::in_memory(64).unwrap();
+        let entry = MemoryEntry::new("Meeting with Alice".to_string())
+            .with_persons(vec!["Alice".to_string(), "Bob".to_string()]);
+        let vector = make_vector(64);
+
+        store.add_entries(&[entry], &[vector]).await.unwrap();
+
+        let params = StructuredSearchParams {
+            persons: Some(vec!["Alice".to_string()]),
+            ..Default::default()
+        };
+        let results = store.structured_search(&params, 5).await.unwrap();
+        assert_eq!(results.len(), 1);
+    }
+
+    #[tokio::test]
+    async fn test_structured_search_by_location() {
+        let store = SqliteVector::in_memory(64).unwrap();
+        let entry =
+            MemoryEntry::new("Meeting at office".to_string()).with_location("Jakarta".to_string());
+        let vector = make_vector(64);
+
+        store.add_entries(&[entry], &[vector]).await.unwrap();
+
+        let params = StructuredSearchParams {
+            location: Some("Jakarta".to_string()),
+            ..Default::default()
+        };
+        let results = store.structured_search(&params, 5).await.unwrap();
+        assert_eq!(results.len(), 1);
+    }
+
+    #[tokio::test]
+    async fn test_structured_search_by_entity() {
+        let store = SqliteVector::in_memory(64).unwrap();
+        let entry = MemoryEntry::new("Working on ProjectX".to_string())
+            .with_entities(vec!["ProjectX".to_string()]);
+        let vector = make_vector(64);
+
+        store.add_entries(&[entry], &[vector]).await.unwrap();
+
+        let params = StructuredSearchParams {
+            entities: Some(vec!["ProjectX".to_string()]),
+            ..Default::default()
+        };
+        let results = store.structured_search(&params, 5).await.unwrap();
+        assert_eq!(results.len(), 1);
+    }
+
+    #[tokio::test]
+    async fn test_delete_entry() {
+        let store = SqliteVector::in_memory(64).unwrap();
+        let entry = make_entry("To be deleted");
+        let entry_id = entry.entry_id;
+        let vector = make_vector(64);
+
+        store.add_entries(&[entry], &[vector]).await.unwrap();
+        assert_eq!(store.count().await.unwrap(), 1);
+
+        let deleted = store.delete_entry(&entry_id).await.unwrap();
+        assert!(deleted);
+        assert_eq!(store.count().await.unwrap(), 0);
+    }
+
+    #[tokio::test]
+    async fn test_delete_nonexistent_entry() {
+        let store = SqliteVector::in_memory(64).unwrap();
+        let fake_id = Uuid::new_v4();
+
+        let deleted = store.delete_entry(&fake_id).await.unwrap();
+        assert!(!deleted);
+    }
+
+    #[tokio::test]
+    async fn test_get_all_entries() {
+        let store = SqliteVector::in_memory(64).unwrap();
+        let entries = vec![make_entry("A"), make_entry("B"), make_entry("C")];
+        let vectors = vec![make_vector(64), make_vector(64), make_vector(64)];
+
+        store.add_entries(&entries, &vectors).await.unwrap();
+
+        let all = store.get_all_entries().await.unwrap();
+        assert_eq!(all.len(), 3);
+    }
+
+    #[tokio::test]
+    async fn test_get_all_entries_empty() {
+        let store = SqliteVector::in_memory(64).unwrap();
+
+        let all = store.get_all_entries().await.unwrap();
+        assert!(all.is_empty());
+    }
+
+    #[tokio::test]
+    async fn test_entry_with_all_fields() {
+        let store = SqliteVector::in_memory(64).unwrap();
+        let entry = MemoryEntry::new("Full entry test".to_string())
+            .with_keywords(vec!["keyword1".to_string(), "keyword2".to_string()])
+            .with_persons(vec!["Alice".to_string()])
+            .with_entities(vec!["ProjectX".to_string()])
+            .with_location("Jakarta".to_string())
+            .with_topic("Testing".to_string());
+        let vector = make_vector(64);
+
+        store
+            .add_entries(&[entry.clone()], &[vector])
+            .await
+            .unwrap();
+
+        let all = store.get_all_entries().await.unwrap();
+        assert_eq!(all.len(), 1);
+
+        let retrieved = &all[0];
+        assert_eq!(retrieved.lossless_restatement, "Full entry test");
+        assert!(retrieved.keywords.contains(&"keyword1".to_string()));
+        assert!(retrieved.persons.contains(&"Alice".to_string()));
+        assert!(retrieved.entities.contains(&"ProjectX".to_string()));
+        assert_eq!(retrieved.location, Some("Jakarta".to_string()));
+        assert_eq!(retrieved.topic, Some("Testing".to_string()));
+    }
+}
