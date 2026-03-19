@@ -1,4 +1,5 @@
-use chrono::{DateTime, Utc};
+use chrono::{DateTime, Duration, NaiveTime, Utc};
+use chrono_english::{Dialect, parse_date_string};
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
@@ -101,6 +102,43 @@ pub struct TimeRange {
     pub end: DateTime<Utc>,
 }
 
+impl TimeRange {
+    pub fn parse(expression: &str) -> Option<Self> {
+        let base_time = Utc::now();
+        let lower = expression.to_lowercase();
+
+        let parsed = if lower.contains("last week") {
+            base_time - Duration::days(7)
+        } else if lower.contains("last month") {
+            base_time - Duration::days(30)
+        } else {
+            parse_date_string(expression, base_time, Dialect::Us).ok()?
+        };
+
+        let start = parsed
+            .date_naive()
+            .and_time(NaiveTime::from_hms_opt(0, 0, 0)?)
+            .and_utc();
+        let end = parsed
+            .date_naive()
+            .and_time(NaiveTime::from_hms_opt(23, 59, 59)?)
+            .and_utc();
+
+        let (final_start, final_end) = if lower.contains("week") {
+            (start - Duration::days(7), end + Duration::days(7))
+        } else if lower.contains("month") {
+            (start - Duration::days(30), end + Duration::days(30))
+        } else {
+            (start, end)
+        };
+
+        Some(Self {
+            start: final_start,
+            end: final_end,
+        })
+    }
+}
+
 #[derive(Debug, Clone, Default)]
 pub struct StructuredSearchParams {
     pub persons: Option<Vec<String>>,
@@ -125,6 +163,11 @@ pub struct QueryAnalysis {
 
 impl From<QueryAnalysis> for StructuredSearchParams {
     fn from(analysis: QueryAnalysis) -> Self {
+        let timestamp_range = analysis
+            .time_expression
+            .as_ref()
+            .and_then(|expr| TimeRange::parse(expr));
+
         Self {
             persons: if analysis.persons.is_empty() {
                 None
@@ -137,7 +180,69 @@ impl From<QueryAnalysis> for StructuredSearchParams {
             } else {
                 Some(analysis.entities)
             },
-            timestamp_range: None,
+            timestamp_range,
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_time_range_yesterday() {
+        let range = TimeRange::parse("yesterday").unwrap();
+        assert!(range.start < range.end);
+    }
+
+    #[test]
+    fn test_time_range_last_week() {
+        let range = TimeRange::parse("last week").unwrap();
+        let now = Utc::now();
+        assert!(range.start < now);
+        assert!(range.end > range.start);
+    }
+
+    #[test]
+    fn test_time_range_today() {
+        let range = TimeRange::parse("today").unwrap();
+        let now = Utc::now();
+        assert!(range.start <= now);
+        assert!(range.end >= now);
+    }
+
+    #[test]
+    fn test_time_range_invalid() {
+        let range = TimeRange::parse("invalid time expression");
+        assert!(range.is_none());
+    }
+
+    #[test]
+    fn test_query_analysis_to_params_with_time() {
+        let analysis = QueryAnalysis {
+            keywords: vec!["test".to_string()],
+            persons: vec!["John".to_string()],
+            entities: Vec::new(),
+            location: None,
+            time_expression: Some("yesterday".to_string()),
+        };
+
+        let params: StructuredSearchParams = analysis.into();
+        assert!(params.timestamp_range.is_some());
+        assert!(params.persons.is_some());
+    }
+
+    #[test]
+    fn test_query_analysis_to_params_without_time() {
+        let analysis = QueryAnalysis {
+            keywords: vec!["test".to_string()],
+            persons: vec!["John".to_string()],
+            entities: Vec::new(),
+            location: None,
+            time_expression: None,
+        };
+
+        let params: StructuredSearchParams = analysis.into();
+        assert!(params.timestamp_range.is_none());
     }
 }

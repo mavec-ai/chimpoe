@@ -65,7 +65,8 @@ impl SqliteVector {
                 lossless_restatement,
                 keywords,
                 content={META_TABLE},
-                content_rowid=rowid
+                content_rowid=rowid,
+                tokenize="porter unicode61"
             );
 
             CREATE TRIGGER IF NOT EXISTS memory_fts_insert AFTER INSERT ON {META_TABLE} BEGIN

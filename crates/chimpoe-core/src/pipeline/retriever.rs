@@ -1,9 +1,7 @@
 use crate::config::RetrievalConfig;
 use crate::error::Result;
 use crate::traits::{Embedder, LlmClient, Message, MessageRole, VectorStore};
-use crate::types::{MemoryEntry, QueryAnalysis, StructuredSearchParams, TimeRange};
-use chrono::Utc;
-use chrono_english::{Dialect, parse_date_string};
+use crate::types::{MemoryEntry, QueryAnalysis, StructuredSearchParams};
 use std::sync::Arc;
 
 const QUERY_ANALYSIS_PROMPT: &str = r#"Analyze the following query and extract key information:
@@ -27,35 +25,6 @@ Return in JSON format:
 }}
 
 Return ONLY JSON, no other content."#;
-
-fn parse_time_expression(expr: &str) -> Option<TimeRange> {
-    let now = Utc::now();
-    let parsed = parse_date_string(expr, now, Dialect::Uk).ok()?;
-    let start = if parsed > now { now } else { parsed };
-    Some(TimeRange { start, end: now })
-}
-
-fn build_search_params(analysis: &QueryAnalysis) -> StructuredSearchParams {
-    let timestamp_range = analysis
-        .time_expression
-        .as_ref()
-        .and_then(|expr| parse_time_expression(expr));
-
-    StructuredSearchParams {
-        persons: if analysis.persons.is_empty() {
-            None
-        } else {
-            Some(analysis.persons.clone())
-        },
-        location: analysis.location.clone(),
-        entities: if analysis.entities.is_empty() {
-            None
-        } else {
-            Some(analysis.entities.clone())
-        },
-        timestamp_range,
-    }
-}
 
 pub struct HybridRetriever {
     llm: Arc<dyn LlmClient>,
@@ -136,7 +105,7 @@ impl HybridRetriever {
                 || analysis.time_expression.is_some();
 
             if has_structured_conditions {
-                Some(build_search_params(analysis))
+                Some(StructuredSearchParams::from(analysis.clone()))
             } else {
                 None
             }
@@ -268,6 +237,9 @@ impl std::fmt::Display for RetrievalHit {
         Ok(())
     }
 }
+
+#[cfg(test)]
+use crate::types::TimeRange;
 
 #[cfg(test)]
 mod tests {
@@ -541,7 +513,7 @@ mod tests {
     }
 
     #[test]
-    fn test_build_search_params_with_persons() {
+    fn test_structured_search_params_from_persons() {
         let analysis = QueryAnalysis {
             keywords: vec!["test".to_string()],
             persons: vec!["Alice".to_string()],
@@ -550,14 +522,14 @@ mod tests {
             time_expression: None,
         };
 
-        let params = build_search_params(&analysis);
+        let params = StructuredSearchParams::from(analysis);
         assert_eq!(params.persons, Some(vec!["Alice".to_string()]));
         assert!(params.location.is_none());
         assert!(params.entities.is_none());
     }
 
     #[test]
-    fn test_build_search_params_with_location() {
+    fn test_structured_search_params_from_location() {
         let analysis = QueryAnalysis {
             keywords: vec!["test".to_string()],
             persons: vec![],
@@ -566,12 +538,12 @@ mod tests {
             time_expression: None,
         };
 
-        let params = build_search_params(&analysis);
+        let params = StructuredSearchParams::from(analysis);
         assert_eq!(params.location, Some("Jakarta".to_string()));
     }
 
     #[test]
-    fn test_build_search_params_with_entities() {
+    fn test_structured_search_params_from_entities() {
         let analysis = QueryAnalysis {
             keywords: vec!["test".to_string()],
             persons: vec![],
@@ -580,21 +552,21 @@ mod tests {
             time_expression: None,
         };
 
-        let params = build_search_params(&analysis);
+        let params = StructuredSearchParams::from(analysis);
         assert_eq!(params.entities, Some(vec!["Google".to_string()]));
     }
 
     #[test]
-    fn test_parse_time_expression_relative_date() {
-        let result = parse_time_expression("yesterday");
+    fn test_time_range_parse_relative_date() {
+        let result = TimeRange::parse("yesterday");
         assert!(result.is_some());
         let range = result.unwrap();
         assert!(range.start < range.end);
     }
 
     #[test]
-    fn test_parse_time_expression_invalid() {
-        let result = parse_time_expression("not a date");
+    fn test_time_range_parse_invalid() {
+        let result = TimeRange::parse("not a date");
         assert!(result.is_none());
     }
 }

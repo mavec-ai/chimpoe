@@ -160,7 +160,12 @@ impl Chimpoe {
                 .await?;
         }
 
-        self.dialogues.clear();
+        let overlap = self.config.pipeline.overlap_size;
+        if self.dialogues.len() > overlap {
+            self.dialogues.drain(0..(self.dialogues.len() - overlap));
+        } else {
+            self.dialogues.clear();
+        }
 
         Ok(count)
     }
