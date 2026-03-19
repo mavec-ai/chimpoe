@@ -2,9 +2,6 @@ use thiserror::Error;
 
 #[derive(Debug, Error)]
 pub enum ChimpoeError {
-    #[error("Store error: {0}")]
-    Store(#[from] StoreError),
-
     #[error("Vector store error: {0}")]
     Vector(#[from] VectorError),
 
@@ -28,25 +25,10 @@ pub enum ChimpoeError {
 }
 
 #[derive(Debug, Error)]
-pub enum StoreError {
-    #[error("Database connection failed: {0}")]
+pub enum VectorError {
+    #[error("Connection failed: {0}")]
     ConnectionFailed(String),
 
-    #[error("Query failed: {0}")]
-    QueryFailed(String),
-
-    #[error("Entry not found: {0}")]
-    NotFound(String),
-
-    #[error("Migration failed: {0}")]
-    MigrationFailed(String),
-
-    #[error("Transaction failed: {0}")]
-    TransactionFailed(String),
-}
-
-#[derive(Debug, Error)]
-pub enum VectorError {
     #[error("Index creation failed: {0}")]
     IndexCreationFailed(String),
 
@@ -55,6 +37,9 @@ pub enum VectorError {
 
     #[error("Insertion failed: {0}")]
     InsertionFailed(String),
+
+    #[error("Deletion failed: {0}")]
+    DeletionFailed(String),
 
     #[error("Dimension mismatch: expected {expected}, got {actual}")]
     DimensionMismatch { expected: usize, actual: usize },
@@ -107,9 +92,6 @@ pub enum PipelineError {
     #[error("Synthesis failed: {0}")]
     SynthesisFailed(String),
 
-    #[error("Retrieval failed: {0}")]
-    RetrievalFailed(String),
-
     #[error("Invalid input: {0}")]
     InvalidInput(String),
 
@@ -119,9 +101,6 @@ pub enum PipelineError {
     #[error("LLM error: {0}")]
     LlmError(#[from] LlmError),
 
-    #[error("Store error: {0}")]
-    StoreError(#[from] StoreError),
-
     #[error("Vector error: {0}")]
     VectorError(#[from] VectorError),
 
@@ -130,7 +109,6 @@ pub enum PipelineError {
 }
 
 pub type Result<T> = std::result::Result<T, ChimpoeError>;
-pub type StoreResult<T> = std::result::Result<T, StoreError>;
 pub type VectorResult<T> = std::result::Result<T, VectorError>;
 pub type EmbeddingResult<T> = std::result::Result<T, EmbeddingError>;
 pub type LlmResult<T> = std::result::Result<T, LlmError>;

@@ -100,3 +100,44 @@ pub struct TimeRange {
     pub start: DateTime<Utc>,
     pub end: DateTime<Utc>,
 }
+
+#[derive(Debug, Clone, Default)]
+pub struct StructuredSearchParams {
+    pub persons: Option<Vec<String>>,
+    pub location: Option<String>,
+    pub entities: Option<Vec<String>>,
+    pub timestamp_range: Option<TimeRange>,
+}
+
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct QueryAnalysis {
+    #[serde(default)]
+    pub keywords: Vec<String>,
+    #[serde(default)]
+    pub persons: Vec<String>,
+    #[serde(default)]
+    pub entities: Vec<String>,
+    #[serde(default)]
+    pub location: Option<String>,
+    #[serde(default)]
+    pub time_expression: Option<String>,
+}
+
+impl From<QueryAnalysis> for StructuredSearchParams {
+    fn from(analysis: QueryAnalysis) -> Self {
+        Self {
+            persons: if analysis.persons.is_empty() {
+                None
+            } else {
+                Some(analysis.persons)
+            },
+            location: analysis.location,
+            entities: if analysis.entities.is_empty() {
+                None
+            } else {
+                Some(analysis.entities)
+            },
+            timestamp_range: None,
+        }
+    }
+}

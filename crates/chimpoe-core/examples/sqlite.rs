@@ -1,15 +1,16 @@
-use chimpoe_core::Chimpoe;
+use chimpoe_core::{Chimpoe, SqliteVector};
+use std::sync::Arc;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    println!("=== Chimpoe Demo (InMemoryVector) ===\n");
+    println!("=== Chimpoe Demo (Sqlite Vector) ===\n");
 
-    println!("1. Initializing Chimpoe (using defaults)...");
-    println!("   Note: For persistent storage, use:");
-    println!(
-        "   Chimpoe::builder().vector_store(Arc::new(SqliteVector::new(\"memories.db\", 768)?)).build()"
-    );
-    let mut chimpoe = Chimpoe::new().await?;
+    println!("1. Initializing Chimpoe with SqliteVector...");
+    let vector_store = Arc::new(SqliteVector::in_memory(768)?);
+    let mut chimpoe = Chimpoe::builder()
+        .vector_store(vector_store)
+        .build()
+        .await?;
     println!("   Ready!\n");
 
     println!("2. Adding dialogues");
@@ -42,19 +43,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
 
     println!("4. Searching memories...");
-    let results = chimpoe.search("what does Alice like?", Some(3)).await?;
+    let results = chimpoe.search("meeting at Starbucks", Some(3)).await?;
     println!("{}\n", results);
 
-    println!("5. Asking a question (uses LLM + memories)...");
-    match chimpoe.ask("Tell me about Alice's preferences").await {
-        Ok(answer) => println!("   Answer: {}\n", answer),
-        Err(e) => println!("   Failed: {}\n", e),
-    }
-
-    println!("6. Stats:");
+    println!("5. Stats:");
     println!("   Memories stored: {}", chimpoe.memory_count().await);
 
-    println!("\n7. All memories in DB:");
+    println!("\n6. All memories in DB:");
     for (i, m) in chimpoe.list_memories().await.iter().enumerate() {
         println!("\n   [{}]", i + 1);
         println!("   ID: {}", m.entry_id);

@@ -1,5 +1,5 @@
-use crate::error::{EmbeddingResult, LlmResult, StoreResult, VectorResult};
-use crate::types::{MemoryEntry, TimeRange};
+use crate::error::{EmbeddingResult, LlmResult, VectorResult};
+use crate::types::{MemoryEntry, StructuredSearchParams};
 use async_trait::async_trait;
 
 #[async_trait]
@@ -37,22 +37,6 @@ pub enum MessageRole {
 }
 
 #[async_trait]
-pub trait Store: Send + Sync {
-    async fn save_entry(&self, entry: &MemoryEntry) -> StoreResult<()>;
-    async fn get_entry(&self, entry_id: &uuid::Uuid) -> StoreResult<Option<MemoryEntry>>;
-    async fn delete_entry(&self, entry_id: &uuid::Uuid) -> StoreResult<bool>;
-    async fn list_entries(&self, limit: Option<usize>) -> StoreResult<Vec<MemoryEntry>>;
-    async fn search_by_metadata(
-        &self,
-        persons: Option<&[String]>,
-        location: Option<&str>,
-        entities: Option<&[String]>,
-        time_range: Option<&TimeRange>,
-        limit: Option<usize>,
-    ) -> StoreResult<Vec<MemoryEntry>>;
-}
-
-#[async_trait]
 pub trait VectorStore: Send + Sync {
     async fn add_entries(&self, entries: &[MemoryEntry], vectors: &[Vec<f32>]) -> VectorResult<()>;
     async fn semantic_search(
@@ -65,6 +49,12 @@ pub trait VectorStore: Send + Sync {
         keywords: &[String],
         top_k: usize,
     ) -> VectorResult<Vec<MemoryEntry>>;
+    async fn structured_search(
+        &self,
+        params: &StructuredSearchParams,
+        top_k: usize,
+    ) -> VectorResult<Vec<MemoryEntry>>;
     async fn delete_entry(&self, entry_id: &uuid::Uuid) -> VectorResult<bool>;
     async fn count(&self) -> VectorResult<usize>;
+    async fn get_all_entries(&self) -> VectorResult<Vec<MemoryEntry>>;
 }

@@ -2,9 +2,8 @@ use crate::config::Config;
 use crate::embed::OllamaEmbedder;
 use crate::error::Result;
 use crate::llm::OllamaLlm;
-use crate::pipeline::{Compressor, Synthesizer};
-use crate::store::SqliteStore;
-use crate::traits::{Embedder, LlmClient, Message, MessageRole, Store, VectorStore};
+use crate::pipeline::{Compressor, HybridRetriever, Synthesizer};
+use crate::traits::{Embedder, LlmClient, Message, MessageRole, VectorStore};
 use crate::types::{Dialogue, MemoryEntry};
 use crate::vector::InMemoryVector;
 use std::sync::Arc;
@@ -12,38 +11,91 @@ use std::sync::Arc;
 pub struct Chimpoe {
     config: Config,
     dialogues: Vec<Dialogue>,
-    memories: Vec<MemoryEntry>,
     compressor: Option<Compressor>,
     embedder: Arc<dyn Embedder>,
-    vector_store: Arc<InMemoryVector>,
+    vector_store: Arc<dyn VectorStore>,
     llm: Option<Arc<dyn LlmClient>>,
-    store: Arc<SqliteStore>,
+    retriever: Option<HybridRetriever>,
+}
+
+#[derive(Default)]
+pub struct ChimpoeBuilder {
+    config: Config,
+    embedder: Option<Arc<dyn Embedder>>,
+    vector_store: Option<Arc<dyn VectorStore>>,
+    llm: Option<Arc<dyn LlmClient>>,
+}
+
+impl ChimpoeBuilder {
+    pub fn vector_store(mut self, store: Arc<dyn VectorStore>) -> Self {
+        self.vector_store = Some(store);
+        self
+    }
+
+    pub fn embedder(mut self, embedder: Arc<dyn Embedder>) -> Self {
+        self.embedder = Some(embedder);
+        self
+    }
+
+    pub fn llm(mut self, llm: Arc<dyn LlmClient>) -> Self {
+        self.llm = Some(llm);
+        self
+    }
+
+    pub fn config(mut self, config: Config) -> Self {
+        self.config = config;
+        self
+    }
+
+    pub async fn build(self) -> Result<Chimpoe> {
+        let embedder = self
+            .embedder
+            .unwrap_or_else(|| Arc::new(OllamaEmbedder::new(&self.config.embedding)));
+
+        let vector_store = self
+            .vector_store
+            .unwrap_or_else(|| Arc::new(InMemoryVector::new()));
+
+        let llm = self
+            .llm
+            .or_else(|| Some(Arc::new(OllamaLlm::new(&self.config.llm)) as Arc<dyn LlmClient>));
+
+        let compressor = llm.as_ref().map(|l| {
+            Compressor::new(
+                l.clone(),
+                self.config.pipeline.clone(),
+                self.config.llm.temperature,
+            )
+        });
+
+        let retriever = llm.as_ref().map(|l| {
+            HybridRetriever::new(
+                l.clone(),
+                vector_store.clone(),
+                embedder.clone(),
+                &self.config.pipeline.retrieval,
+            )
+        });
+
+        Ok(Chimpoe {
+            config: self.config,
+            dialogues: Vec::new(),
+            compressor,
+            embedder,
+            vector_store,
+            llm,
+            retriever,
+        })
+    }
 }
 
 impl Chimpoe {
-    pub async fn new() -> Result<Self> {
-        Self::with_config(Config::default()).await
+    pub fn builder() -> ChimpoeBuilder {
+        ChimpoeBuilder::default()
     }
 
-    pub async fn with_config(config: Config) -> Result<Self> {
-        let store = Arc::new(SqliteStore::new(":memory:").await?);
-        let embedder = Arc::new(OllamaEmbedder::new(&config.embedding));
-        let llm = Arc::new(OllamaLlm::new(&config.llm));
-        let vector_store = Arc::new(InMemoryVector::new());
-
-        let compressor =
-            Compressor::new(llm.clone(), config.pipeline.clone(), config.llm.temperature);
-
-        Ok(Self {
-            config,
-            dialogues: Vec::new(),
-            memories: Vec::new(),
-            compressor: Some(compressor),
-            embedder,
-            vector_store,
-            llm: Some(llm),
-            store,
-        })
+    pub async fn new() -> Result<Self> {
+        Self::builder().build().await
     }
 
     pub async fn add_dialogue(
@@ -103,14 +155,9 @@ impl Chimpoe {
                 .collect();
             let vectors = self.embedder.encode(&texts).await?;
 
-            for entry in &new_memories {
-                self.store.save_entry(entry).await?;
-            }
-
             self.vector_store
                 .add_entries(&new_memories, &vectors)
                 .await?;
-            self.memories.extend(new_memories);
         }
 
         self.dialogues.clear();
@@ -119,52 +166,30 @@ impl Chimpoe {
     }
 
     pub async fn search(&self, query: &str, top_k: Option<usize>) -> Result<SearchResult> {
-        let k = top_k.unwrap_or(5);
-
-        let query_vector = self.embedder.encode_single(query).await?;
-        let semantic_results = self.vector_store.semantic_search(&query_vector, k).await?;
-
-        let keywords: Vec<String> = query
-            .split_whitespace()
-            .filter(|w| w.len() > 2)
-            .map(String::from)
-            .collect();
-
-        let lexical_results = if !keywords.is_empty() {
-            self.vector_store.keyword_search(&keywords, k).await?
-        } else {
-            Vec::new()
+        let retriever = match &self.retriever {
+            Some(r) => r,
+            None => {
+                return Ok(SearchResult {
+                    query: query.to_string(),
+                    results: Vec::new(),
+                });
+            }
         };
 
-        let mut seen_ids = std::collections::HashSet::new();
-        let mut combined = Vec::new();
-
-        for entry in semantic_results {
-            if seen_ids.insert(entry.entry_id) {
-                combined.push((entry, "semantic".to_string()));
-            }
-        }
-
-        for entry in lexical_results {
-            if seen_ids.insert(entry.entry_id) {
-                combined.push((entry, "lexical".to_string()));
-            }
-        }
-
-        combined.truncate(k);
+        let hits = retriever.retrieve(query, top_k).await?;
 
         Ok(SearchResult {
             query: query.to_string(),
-            results: combined
+            results: hits
                 .into_iter()
-                .map(|(entry, source)| MemoryHit {
-                    memory: entry.lossless_restatement,
-                    persons: entry.persons,
-                    entities: entry.entities,
-                    location: entry.location,
-                    topic: entry.topic,
-                    timestamp: entry.timestamp.map(|t| t.to_rfc3339()),
-                    source,
+                .map(|hit| MemoryHit {
+                    memory: hit.memory,
+                    persons: hit.persons,
+                    entities: hit.entities,
+                    location: hit.location,
+                    topic: hit.topic,
+                    timestamp: hit.timestamp,
+                    source: hit.source,
                 })
                 .collect(),
         })
@@ -215,16 +240,19 @@ impl Chimpoe {
         Ok(response)
     }
 
-    pub fn memory_count(&self) -> usize {
-        self.memories.len()
+    pub async fn memory_count(&self) -> usize {
+        self.vector_store.count().await.unwrap_or(0)
     }
 
     pub fn dialogue_count(&self) -> usize {
         self.dialogues.len()
     }
 
-    pub fn list_memories(&self) -> &[MemoryEntry] {
-        &self.memories
+    pub async fn list_memories(&self) -> Vec<MemoryEntry> {
+        self.vector_store
+            .get_all_entries()
+            .await
+            .unwrap_or_default()
     }
 }
 

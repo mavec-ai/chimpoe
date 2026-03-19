@@ -1,6 +1,6 @@
 use crate::error::{VectorError, VectorResult};
 use crate::traits::VectorStore;
-use crate::types::MemoryEntry;
+use crate::types::{MemoryEntry, StructuredSearchParams};
 use async_trait::async_trait;
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -100,6 +100,67 @@ impl VectorStore for InMemoryVector {
         Ok(scored.into_iter().map(|(_, entry)| entry).collect())
     }
 
+    async fn structured_search(
+        &self,
+        params: &StructuredSearchParams,
+        top_k: usize,
+    ) -> VectorResult<Vec<MemoryEntry>> {
+        let data = self.data.read().await;
+
+        let results: Vec<MemoryEntry> = data
+            .values()
+            .filter_map(|(entry, _)| {
+                if let Some(ref persons) = params.persons
+                    && !persons.is_empty()
+                {
+                    let has_any = persons
+                        .iter()
+                        .any(|p| entry.persons.iter().any(|ep| ep.eq_ignore_ascii_case(p)));
+                    if !has_any {
+                        return None;
+                    }
+                }
+
+                if let Some(ref location) = params.location {
+                    let matches = entry
+                        .location
+                        .as_ref()
+                        .map(|el| el.to_lowercase().contains(&location.to_lowercase()))
+                        .unwrap_or(false);
+                    if !matches {
+                        return None;
+                    }
+                }
+
+                if let Some(ref entities) = params.entities
+                    && !entities.is_empty()
+                {
+                    let has_any = entities
+                        .iter()
+                        .any(|e| entry.entities.iter().any(|ee| ee.eq_ignore_ascii_case(e)));
+                    if !has_any {
+                        return None;
+                    }
+                }
+
+                if let Some(ref time_range) = params.timestamp_range {
+                    if let Some(ref ts) = entry.timestamp {
+                        if ts < &time_range.start || ts > &time_range.end {
+                            return None;
+                        }
+                    } else {
+                        return None;
+                    }
+                }
+
+                Some(entry.clone())
+            })
+            .take(top_k)
+            .collect();
+
+        Ok(results)
+    }
+
     async fn delete_entry(&self, entry_id: &Uuid) -> VectorResult<bool> {
         let mut data = self.data.write().await;
         Ok(data.remove(entry_id).is_some())
@@ -108,6 +169,11 @@ impl VectorStore for InMemoryVector {
     async fn count(&self) -> VectorResult<usize> {
         let data = self.data.read().await;
         Ok(data.len())
+    }
+
+    async fn get_all_entries(&self) -> VectorResult<Vec<MemoryEntry>> {
+        let data = self.data.read().await;
+        Ok(data.values().map(|(entry, _)| entry.clone()).collect())
     }
 }
 

@@ -12,6 +12,24 @@ pub struct PipelineConfig {
     pub window_size: usize,
     pub overlap_size: usize,
     pub similarity_threshold: f32,
+    pub retrieval: RetrievalConfig,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct RetrievalConfig {
+    pub semantic_top_k: usize,
+    pub keyword_top_k: usize,
+    pub structured_top_k: usize,
+}
+
+impl Default for RetrievalConfig {
+    fn default() -> Self {
+        Self {
+            semantic_top_k: 5,
+            keyword_top_k: 3,
+            structured_top_k: 5,
+        }
+    }
 }
 
 impl Default for PipelineConfig {
@@ -20,6 +38,7 @@ impl Default for PipelineConfig {
             window_size: 40,
             overlap_size: 2,
             similarity_threshold: 0.5,
+            retrieval: RetrievalConfig::default(),
         }
     }
 }
