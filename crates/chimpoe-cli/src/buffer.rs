@@ -1,5 +1,5 @@
 use anyhow::Result;
-use chimpoe_core::types::Dialogue;
+use chimpoe::types::Dialogue;
 use std::fs;
 use std::path::PathBuf;
 

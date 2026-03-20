@@ -1,6 +1,6 @@
 use crate::config::CliConfig;
 use anyhow::{Result, anyhow};
-use chimpoe_core::{
+use chimpoe::{
     config::{EmbeddingConfig, LlmConfig, Provider},
     embed::{OllamaEmbedder, OpenAIEmbedder},
     llm::{OllamaLlm, OpenAILlm},

@@ -1,4 +1,4 @@
-use chimpoe_core::{
+use chimpoe::{
     Chimpoe, Config, EmbeddingConfig, LlmConfig, OpenAIEmbedder, OpenAILlm, PipelineConfig,
     Provider, RetrievalConfig, SqliteVector,
 };

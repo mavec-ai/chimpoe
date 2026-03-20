@@ -11,7 +11,7 @@ name = "chimpoe"
 path = "src/main.rs"
 
 [dependencies]
-chimpoe-core = { path = "../chimpoe-core" }
+chimpoe = { path = "../chimpoe-core" }
 
 tokio.workspace = true
 clap.workspace = true

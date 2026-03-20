@@ -1,7 +1,7 @@
 use crate::config::CliConfig;
 use crate::providers;
 use anyhow::Result;
-use chimpoe_core::{Chimpoe, traits::Embedder, vector::SqliteVector};
+use chimpoe::{Chimpoe, traits::Embedder, vector::SqliteVector};
 use clap::Args;
 use colored::Colorize;
 use std::sync::Arc;
@@ -37,8 +37,8 @@ pub async fn run(args: SearchArgs, config: &CliConfig) -> Result<()> {
     let embedder: Arc<dyn Embedder> = providers::create_embedder(config)?;
     let llm = providers::create_llm(config)?;
 
-    let pipeline_config = chimpoe_core::config::PipelineConfig {
-        retrieval: chimpoe_core::config::RetrievalConfig {
+    let pipeline_config = chimpoe::config::PipelineConfig {
+        retrieval: chimpoe::config::RetrievalConfig {
             semantic_top_k: args.top_k,
             keyword_top_k: config.memory.keyword_top_k,
             structured_top_k: config.memory.structured_top_k,
@@ -46,7 +46,7 @@ pub async fn run(args: SearchArgs, config: &CliConfig) -> Result<()> {
         ..Default::default()
     };
 
-    let core_config = chimpoe_core::Config {
+    let core_config = chimpoe::Config {
         pipeline: pipeline_config,
         ..Default::default()
     };

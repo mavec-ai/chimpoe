@@ -1,5 +1,5 @@
 [package]
-name = "chimpoe-core"
+name = "chimpoe"
 version.workspace = true
 edition.workspace = true
 authors.workspace = true

@@ -2,7 +2,7 @@ use crate::config::{
     CliConfig, EmbedderConfig, LlmConfig, MemoryConfig, StorageConfig, chimpoe_dir,
 };
 use anyhow::Result;
-use chimpoe_core::config::{
+use chimpoe::config::{
     DEFAULT_LLM_TEMPERATURE, OLLAMA_EMBEDDER_BASE_URL, OLLAMA_LLM_BASE_URL,
     OPENAI_EMBEDDER_BASE_URL, OPENAI_LLM_BASE_URL,
 };

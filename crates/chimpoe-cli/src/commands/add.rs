@@ -1,7 +1,7 @@
 use crate::buffer;
 use crate::config::CliConfig;
 use anyhow::Result;
-use chimpoe_core::types::Dialogue;
+use chimpoe::types::Dialogue;
 use clap::Args;
 use colored::Colorize;
 

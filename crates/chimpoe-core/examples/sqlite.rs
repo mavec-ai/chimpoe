@@ -1,4 +1,4 @@
-use chimpoe_core::{Chimpoe, SqliteVector};
+use chimpoe::{Chimpoe, SqliteVector};
 use std::sync::Arc;
 
 #[tokio::main]

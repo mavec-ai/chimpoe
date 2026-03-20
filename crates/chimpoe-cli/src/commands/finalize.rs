@@ -2,7 +2,7 @@ use crate::buffer;
 use crate::config::CliConfig;
 use crate::providers;
 use anyhow::Result;
-use chimpoe_core::{Chimpoe, traits::Embedder, vector::SqliteVector};
+use chimpoe::{Chimpoe, traits::Embedder, vector::SqliteVector};
 use clap::Args;
 use colored::Colorize;
 use std::sync::Arc;
@@ -35,12 +35,12 @@ pub async fn run(_args: FinalizeArgs, config: &CliConfig) -> Result<()> {
     let embedder: Arc<dyn Embedder> = providers::create_embedder(config)?;
     let llm = providers::create_llm(config)?;
 
-    let pipeline_config = chimpoe_core::config::PipelineConfig {
+    let pipeline_config = chimpoe::config::PipelineConfig {
         window_size: config.memory.window_size,
         ..Default::default()
     };
 
-    let core_config = chimpoe_core::Config {
+    let core_config = chimpoe::Config {
         pipeline: pipeline_config,
         ..Default::default()
     };
