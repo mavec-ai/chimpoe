@@ -103,7 +103,7 @@ impl Default for EmbeddingConfig {
             model: OLLAMA_EMBEDDER_MODEL.to_string(),
             base_url: Some(OLLAMA_EMBEDDER_BASE_URL.to_string()),
             api_key: None,
-            dimension: 0,
+            dimension: 768,
         }
     }
 }

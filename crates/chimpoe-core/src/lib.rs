@@ -13,13 +13,13 @@ mod chimpoe;
 #[cfg(test)]
 mod mocks;
 
-pub use config::{Config, RetrievalConfig};
+pub use config::{Config, EmbeddingConfig, LlmConfig, PipelineConfig, Provider, RetrievalConfig};
 pub use error::{ChimpoeError, Result};
-pub use traits::*;
-pub use types::*;
+pub use traits::{Embedder, LlmClient, Message, MessageRole, VectorStore};
+pub use types::{Dialogue, MemoryEntry};
 
 pub use chimpoe::{Chimpoe, ChimpoeBuilder, MemoryHit, SearchResult};
-pub use embed::OllamaEmbedder;
-pub use llm::OllamaLlm;
+pub use embed::{OllamaEmbedder, OpenAIEmbedder};
+pub use llm::{OllamaLlm, OpenAILlm};
 pub use pipeline::{Compressor, HybridRetriever, RetrievalHit, Synthesizer};
 pub use vector::{InMemoryVector, SqliteVector};
