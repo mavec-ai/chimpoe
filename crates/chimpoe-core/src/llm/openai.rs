@@ -1,12 +1,13 @@
-use crate::config::{LlmConfig, OLLAMA_LLM_BASE_URL};
+use crate::config::{LlmConfig, OPENAI_LLM_BASE_URL};
 use crate::error::{LlmError, LlmResult};
 use crate::traits::{LlmClient, Message, MessageRole};
 use async_trait::async_trait;
 use reqwest::Client;
 use serde::{Deserialize, Serialize};
 
-pub struct OllamaLlm {
+pub struct OpenAILlm {
     client: Client,
+    api_key: String,
     base_url: String,
     model: String,
 }
@@ -18,7 +19,7 @@ struct ChatRequest {
     stream: bool,
     temperature: f32,
     #[serde(skip_serializing_if = "Option::is_none")]
-    format: Option<serde_json::Value>,
+    response_format: Option<serde_json::Value>,
 }
 
 #[derive(Serialize)]
@@ -42,16 +43,34 @@ struct ResponseMessage {
     content: String,
 }
 
-impl OllamaLlm {
+#[derive(Deserialize)]
+struct ErrorResponse {
+    error: Option<OpenAIError>,
+}
+
+#[derive(Deserialize)]
+struct OpenAIError {
+    message: String,
+    #[serde(rename = "type")]
+    error_type: Option<String>,
+}
+
+impl OpenAILlm {
     pub fn new(config: &LlmConfig) -> Self {
         Self {
             client: Client::new(),
+            api_key: config.api_key.clone().unwrap_or_default(),
             base_url: config
                 .base_url
                 .clone()
-                .unwrap_or_else(|| OLLAMA_LLM_BASE_URL.to_string()),
+                .unwrap_or_else(|| OPENAI_LLM_BASE_URL.to_string()),
             model: config.model.clone(),
         }
+    }
+
+    pub fn with_api_key(mut self, api_key: String) -> Self {
+        self.api_key = api_key;
+        self
     }
 
     pub fn with_base_url(mut self, base_url: String) -> Self {
@@ -115,35 +134,46 @@ impl OllamaLlm {
 }
 
 #[async_trait]
-impl LlmClient for OllamaLlm {
+impl LlmClient for OpenAILlm {
     async fn chat_completion(&self, messages: &[Message], temperature: f32) -> LlmResult<String> {
         let request = ChatRequest {
             model: self.model.clone(),
             messages: self.convert_messages(messages),
             stream: false,
             temperature,
-            format: Some(serde_json::json!("json")),
+            response_format: None,
         };
 
         let url = format!("{}/chat/completions", self.base_url);
         let response = self
             .client
             .post(&url)
+            .header("Authorization", format!("Bearer {}", self.api_key))
             .json(&request)
             .send()
             .await
             .map_err(|e| LlmError::ApiError(e.to_string()))?;
 
-        if !response.status().is_success() {
-            let status = response.status();
-            let body = response.text().await.unwrap_or_default();
+        let status = response.status();
+        let body = response
+            .text()
+            .await
+            .map_err(|e| LlmError::ApiError(e.to_string()))?;
+
+        if !status.is_success() {
+            if let Ok(error_response) = serde_json::from_str::<ErrorResponse>(&body)
+                && let Some(error) = error_response.error
+            {
+                if error.error_type.as_deref() == Some("rate_limit_exceeded") {
+                    return Err(LlmError::RateLimited);
+                }
+                return Err(LlmError::ApiError(error.message));
+            }
             return Err(LlmError::ApiError(format!("HTTP {}: {}", status, body)));
         }
 
-        let chat_response: ChatResponse = response
-            .json()
-            .await
-            .map_err(|e| LlmError::InvalidResponse(e.to_string()))?;
+        let chat_response: ChatResponse =
+            serde_json::from_str(&body).map_err(|e| LlmError::InvalidResponse(e.to_string()))?;
 
         chat_response
             .choices
@@ -162,28 +192,39 @@ impl LlmClient for OllamaLlm {
             messages: self.convert_messages(messages),
             stream: false,
             temperature,
-            format: Some(serde_json::json!({"type": "object"})),
+            response_format: Some(serde_json::json!({"type": "json_object"})),
         };
 
         let url = format!("{}/chat/completions", self.base_url);
         let response = self
             .client
             .post(&url)
+            .header("Authorization", format!("Bearer {}", self.api_key))
             .json(&request)
             .send()
             .await
             .map_err(|e| LlmError::ApiError(e.to_string()))?;
 
-        if !response.status().is_success() {
-            let status = response.status();
-            let body = response.text().await.unwrap_or_default();
+        let status = response.status();
+        let body = response
+            .text()
+            .await
+            .map_err(|e| LlmError::ApiError(e.to_string()))?;
+
+        if !status.is_success() {
+            if let Ok(error_response) = serde_json::from_str::<ErrorResponse>(&body)
+                && let Some(error) = error_response.error
+            {
+                if error.error_type.as_deref() == Some("rate_limit_exceeded") {
+                    return Err(LlmError::RateLimited);
+                }
+                return Err(LlmError::ApiError(error.message));
+            }
             return Err(LlmError::ApiError(format!("HTTP {}: {}", status, body)));
         }
 
-        let chat_response: ChatResponse = response
-            .json()
-            .await
-            .map_err(|e| LlmError::InvalidResponse(e.to_string()))?;
+        let chat_response: ChatResponse =
+            serde_json::from_str(&body).map_err(|e| LlmError::InvalidResponse(e.to_string()))?;
 
         let content = chat_response
             .choices

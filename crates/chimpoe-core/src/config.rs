@@ -1,5 +1,28 @@
 use serde::{Deserialize, Serialize};
 
+pub const OLLAMA_LLM_MODEL: &str = "llama3.2";
+pub const OLLAMA_LLM_BASE_URL: &str = "http://localhost:11434/v1";
+
+pub const OLLAMA_EMBEDDER_MODEL: &str = "nomic-embed-text";
+pub const OLLAMA_EMBEDDER_BASE_URL: &str = "http://localhost:11434";
+
+pub const OPENAI_LLM_BASE_URL: &str = "https://api.openai.com/v1";
+pub const OPENAI_EMBEDDER_BASE_URL: &str = "https://api.openai.com/v1";
+
+pub const DEFAULT_LLM_TEMPERATURE: f32 = 0.7;
+pub const DEFAULT_WINDOW_SIZE: usize = 10;
+pub const DEFAULT_SEMANTIC_TOP_K: usize = 5;
+pub const DEFAULT_KEYWORD_TOP_K: usize = 3;
+pub const DEFAULT_STRUCTURED_TOP_K: usize = 5;
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Default)]
+#[serde(rename_all = "lowercase")]
+pub enum Provider {
+    #[default]
+    Ollama,
+    OpenAI,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct Config {
     pub pipeline: PipelineConfig,
@@ -25,9 +48,9 @@ pub struct RetrievalConfig {
 impl Default for RetrievalConfig {
     fn default() -> Self {
         Self {
-            semantic_top_k: 5,
-            keyword_top_k: 3,
-            structured_top_k: 5,
+            semantic_top_k: DEFAULT_SEMANTIC_TOP_K,
+            keyword_top_k: DEFAULT_KEYWORD_TOP_K,
+            structured_top_k: DEFAULT_STRUCTURED_TOP_K,
         }
     }
 }
@@ -35,7 +58,7 @@ impl Default for RetrievalConfig {
 impl Default for PipelineConfig {
     fn default() -> Self {
         Self {
-            window_size: 40,
+            window_size: DEFAULT_WINDOW_SIZE,
             overlap_size: 2,
             similarity_threshold: 0.5,
             retrieval: RetrievalConfig::default(),
@@ -45,34 +68,42 @@ impl Default for PipelineConfig {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct LlmConfig {
+    pub provider: Provider,
     pub model: String,
     pub base_url: Option<String>,
+    pub api_key: Option<String>,
     pub temperature: f32,
 }
 
 impl Default for LlmConfig {
     fn default() -> Self {
         Self {
-            model: "llama3.2".to_string(),
-            base_url: Some("http://localhost:11434/v1".to_string()),
-            temperature: 0.2,
+            provider: Provider::Ollama,
+            model: OLLAMA_LLM_MODEL.to_string(),
+            base_url: Some(OLLAMA_LLM_BASE_URL.to_string()),
+            api_key: None,
+            temperature: DEFAULT_LLM_TEMPERATURE,
         }
     }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct EmbeddingConfig {
+    pub provider: Provider,
     pub model: String,
     pub base_url: Option<String>,
+    pub api_key: Option<String>,
     pub dimension: usize,
 }
 
 impl Default for EmbeddingConfig {
     fn default() -> Self {
         Self {
-            model: "nomic-embed-text".to_string(),
-            base_url: Some("http://localhost:11434".to_string()),
-            dimension: 768,
+            provider: Provider::Ollama,
+            model: OLLAMA_EMBEDDER_MODEL.to_string(),
+            base_url: Some(OLLAMA_EMBEDDER_BASE_URL.to_string()),
+            api_key: None,
+            dimension: 0,
         }
     }
 }

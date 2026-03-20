@@ -1,12 +1,7 @@
 use crate::config::CliConfig;
+use crate::providers;
 use anyhow::Result;
-use chimpoe_core::{
-    Chimpoe,
-    embed::OllamaEmbedder,
-    llm::OllamaLlm,
-    traits::{Embedder, LlmClient},
-    vector::SqliteVector,
-};
+use chimpoe_core::{Chimpoe, traits::Embedder, vector::SqliteVector};
 use clap::Args;
 use colored::Colorize;
 use std::sync::Arc;
@@ -36,22 +31,11 @@ pub async fn run(args: SearchArgs, config: &CliConfig) -> Result<()> {
 
     let vector_store = Arc::new(SqliteVector::new(
         &config.storage.path.to_string_lossy(),
-        768,
+        config.embedder.dimension,
     )?);
 
-    let embedder_config = chimpoe_core::config::EmbeddingConfig {
-        model: config.embedder.model.clone(),
-        base_url: Some(config.embedder.base_url.clone()),
-        dimension: 768,
-    };
-    let embedder: Arc<dyn Embedder> = Arc::new(OllamaEmbedder::new(&embedder_config));
-
-    let llm_config = chimpoe_core::config::LlmConfig {
-        model: config.llm.model.clone(),
-        base_url: Some(config.llm.base_url.clone()),
-        temperature: 0.7,
-    };
-    let llm: Arc<dyn LlmClient> = Arc::new(OllamaLlm::new(&llm_config));
+    let embedder: Arc<dyn Embedder> = providers::create_embedder(config)?;
+    let llm = providers::create_llm(config)?;
 
     let pipeline_config = chimpoe_core::config::PipelineConfig {
         retrieval: chimpoe_core::config::RetrievalConfig {
@@ -64,8 +48,7 @@ pub async fn run(args: SearchArgs, config: &CliConfig) -> Result<()> {
 
     let core_config = chimpoe_core::Config {
         pipeline: pipeline_config,
-        embedding: embedder_config,
-        llm: llm_config,
+        ..Default::default()
     };
 
     let chimpoe = Chimpoe::builder()

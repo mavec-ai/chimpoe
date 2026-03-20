@@ -1,4 +1,4 @@
-use crate::config::EmbeddingConfig;
+use crate::config::{EmbeddingConfig, OLLAMA_EMBEDDER_BASE_URL};
 use crate::error::{EmbeddingError, EmbeddingResult};
 use crate::traits::Embedder;
 use async_trait::async_trait;
@@ -25,14 +25,28 @@ struct EmbedResponse {
 
 impl OllamaEmbedder {
     pub fn new(config: &EmbeddingConfig) -> Self {
+        let dimension = if config.dimension > 0 {
+            config.dimension
+        } else {
+            Self::default_dimension(&config.model)
+        };
         Self {
             client: Client::new(),
             base_url: config
                 .base_url
                 .clone()
-                .unwrap_or_else(|| "http://localhost:11434".to_string()),
+                .unwrap_or_else(|| OLLAMA_EMBEDDER_BASE_URL.to_string()),
             model: config.model.clone(),
-            dimension: config.dimension,
+            dimension,
+        }
+    }
+
+    fn default_dimension(model: &str) -> usize {
+        match model {
+            "nomic-embed-text" => 768,
+            "mxbai-embed-large" => 1024,
+            "all-minilm" => 384,
+            _ => 768,
         }
     }
 

@@ -1,4 +1,9 @@
 use anyhow::{Context, Result};
+use chimpoe_core::config::{
+    DEFAULT_KEYWORD_TOP_K, DEFAULT_LLM_TEMPERATURE, DEFAULT_SEMANTIC_TOP_K,
+    DEFAULT_STRUCTURED_TOP_K, DEFAULT_WINDOW_SIZE, OLLAMA_EMBEDDER_BASE_URL, OLLAMA_EMBEDDER_MODEL,
+    OLLAMA_LLM_BASE_URL, OLLAMA_LLM_MODEL,
+};
 use serde::{Deserialize, Serialize};
 use std::fs;
 use std::path::PathBuf;
@@ -11,6 +16,15 @@ pub fn chimpoe_dir() -> PathBuf {
 
 pub fn config_path() -> PathBuf {
     chimpoe_dir().join("config.toml")
+}
+
+pub fn ensure_directories() -> Result<()> {
+    let dir = chimpoe_dir();
+    if !dir.exists() {
+        fs::create_dir_all(&dir)
+            .with_context(|| format!("Failed to create directory {:?}", dir))?;
+    }
+    Ok(())
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
@@ -35,6 +49,8 @@ pub struct LlmConfig {
     pub model: String,
     #[serde(default)]
     pub api_key: Option<String>,
+    #[serde(default = "default_llm_temperature")]
+    pub temperature: f32,
 }
 
 impl Default for LlmConfig {
@@ -44,8 +60,13 @@ impl Default for LlmConfig {
             base_url: default_llm_base_url(),
             model: default_llm_model(),
             api_key: None,
+            temperature: default_llm_temperature(),
         }
     }
+}
+
+fn default_llm_temperature() -> f32 {
+    DEFAULT_LLM_TEMPERATURE
 }
 
 fn default_llm_provider() -> String {
@@ -53,11 +74,11 @@ fn default_llm_provider() -> String {
 }
 
 fn default_llm_base_url() -> String {
-    "http://localhost:11434/v1".to_string()
+    OLLAMA_LLM_BASE_URL.to_string()
 }
 
 fn default_llm_model() -> String {
-    "llama3.2".to_string()
+    OLLAMA_LLM_MODEL.to_string()
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -68,6 +89,10 @@ pub struct EmbedderConfig {
     pub base_url: String,
     #[serde(default = "default_embedder_model")]
     pub model: String,
+    #[serde(default)]
+    pub api_key: Option<String>,
+    #[serde(default = "default_embedder_dimension")]
+    pub dimension: usize,
 }
 
 impl Default for EmbedderConfig {
@@ -76,8 +101,14 @@ impl Default for EmbedderConfig {
             provider: default_embedder_provider(),
             base_url: default_embedder_base_url(),
             model: default_embedder_model(),
+            api_key: None,
+            dimension: default_embedder_dimension(),
         }
     }
+}
+
+fn default_embedder_dimension() -> usize {
+    768
 }
 
 fn default_embedder_provider() -> String {
@@ -85,11 +116,11 @@ fn default_embedder_provider() -> String {
 }
 
 fn default_embedder_base_url() -> String {
-    "http://localhost:11434".to_string()
+    OLLAMA_EMBEDDER_BASE_URL.to_string()
 }
 
 fn default_embedder_model() -> String {
-    "nomic-embed-text".to_string()
+    OLLAMA_EMBEDDER_MODEL.to_string()
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -141,19 +172,19 @@ impl Default for MemoryConfig {
 }
 
 fn default_window_size() -> usize {
-    10
+    DEFAULT_WINDOW_SIZE
 }
 
 fn default_semantic_top_k() -> usize {
-    5
+    DEFAULT_SEMANTIC_TOP_K
 }
 
 fn default_keyword_top_k() -> usize {
-    3
+    DEFAULT_KEYWORD_TOP_K
 }
 
 fn default_structured_top_k() -> usize {
-    5
+    DEFAULT_STRUCTURED_TOP_K
 }
 
 impl CliConfig {

@@ -1,6 +1,7 @@
 mod buffer;
 mod commands;
 mod config;
+mod providers;
 
 use clap::{Parser, Subcommand};
 use colored::Colorize;
@@ -30,7 +31,7 @@ async fn main() -> anyhow::Result<()> {
     let config = config::CliConfig::load().unwrap_or_default();
 
     let result = match cli.command {
-        Commands::Init(args) => commands::init::run(args, &config).await,
+        Commands::Init(args) => commands::init::run(args).await,
         Commands::Add(args) => commands::add::run(args, &config).await,
         Commands::Finalize(args) => commands::finalize::run(args, &config).await,
         Commands::Search(args) => commands::search::run(args, &config).await,
