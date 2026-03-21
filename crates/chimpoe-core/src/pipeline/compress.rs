@@ -92,19 +92,16 @@ IMPORTANT:
 Return ONLY valid JSON, no markdown or explanation outside the JSON structure.
 "#;
 
+const DEFAULT_TEMPERATURE: f32 = 0.1;
+
 pub struct Compressor {
     llm: Arc<dyn LlmClient>,
     config: PipelineConfig,
-    temperature: f32,
 }
 
 impl Compressor {
-    pub fn new(llm: Arc<dyn LlmClient>, config: PipelineConfig, temperature: f32) -> Self {
-        Self {
-            llm,
-            config,
-            temperature,
-        }
+    pub fn new(llm: Arc<dyn LlmClient>, config: PipelineConfig) -> Self {
+        Self { llm, config }
     }
 
     pub async fn compress_dialogues(
@@ -175,7 +172,7 @@ impl Compressor {
 
         let response = self
             .llm
-            .chat_completion_with_json(&messages, self.temperature)
+            .chat_completion_with_json(&messages, DEFAULT_TEMPERATURE)
             .await?;
         let entries = self.parse_extraction_response(&response)?;
 
@@ -299,7 +296,7 @@ mod tests {
     #[tokio::test]
     async fn test_compress_empty_dialogues() {
         let llm = Arc::new(MockLlmClient::new());
-        let compressor = Compressor::new(llm, test_config(), 0.2);
+        let compressor = Compressor::new(llm, test_config());
 
         let result = compressor.compress_dialogues(&[]).await.unwrap();
         assert!(result.is_empty());
@@ -321,7 +318,7 @@ mod tests {
         });
 
         let llm = Arc::new(MockLlmClient::with_responses(vec![response]));
-        let compressor = Compressor::new(llm, test_config(), 0.2);
+        let compressor = Compressor::new(llm, test_config());
 
         let dialogues = vec![
             make_dialogue("User", "I love pizza"),
@@ -357,7 +354,7 @@ mod tests {
         });
 
         let llm = Arc::new(MockLlmClient::with_responses(vec![response]));
-        let compressor = Compressor::new(llm, test_config(), 0.2);
+        let compressor = Compressor::new(llm, test_config());
 
         let dialogues = vec![make_dialogue(
             "User",
@@ -384,7 +381,7 @@ mod tests {
         });
 
         let llm = Arc::new(MockLlmClient::with_responses(vec![response]));
-        let compressor = Compressor::new(llm, test_config(), 0.2);
+        let compressor = Compressor::new(llm, test_config());
 
         let dialogues = vec![make_dialogue("User", "I met Alice at the conference")];
 
@@ -396,7 +393,7 @@ mod tests {
     #[tokio::test]
     async fn test_create_windows_empty() {
         let llm = Arc::new(MockLlmClient::new());
-        let compressor = Compressor::new(llm, test_config(), 0.2);
+        let compressor = Compressor::new(llm, test_config());
 
         let windows = compressor.create_windows(&[]);
         assert!(windows.is_empty());
@@ -410,7 +407,7 @@ mod tests {
             overlap_size: 2,
             ..test_config()
         };
-        let compressor = Compressor::new(llm, config, 0.2);
+        let compressor = Compressor::new(llm, config);
 
         let dialogues: Vec<Dialogue> = (0..5)
             .map(|i| make_dialogue("User", &format!("Message {}", i)))
@@ -429,7 +426,7 @@ mod tests {
             overlap_size: 1,
             ..test_config()
         };
-        let compressor = Compressor::new(llm, config, 0.2);
+        let compressor = Compressor::new(llm, config);
 
         let dialogues: Vec<Dialogue> = (0..10)
             .map(|i| make_dialogue("User", &format!("Message {}", i)))
@@ -447,7 +444,7 @@ mod tests {
             overlap_size: 2,
             ..test_config()
         };
-        let compressor = Compressor::new(llm, config, 0.2);
+        let compressor = Compressor::new(llm, config);
 
         let dialogues: Vec<Dialogue> = (0..8)
             .map(|i| make_dialogue("User", &format!("Message {}", i)))
@@ -469,7 +466,7 @@ mod tests {
     #[tokio::test]
     async fn test_parse_extraction_response_valid() {
         let llm = Arc::new(MockLlmClient::new());
-        let compressor = Compressor::new(llm, test_config(), 0.2);
+        let compressor = Compressor::new(llm, test_config());
 
         let json = serde_json::json!({
             "memories": [
@@ -497,7 +494,7 @@ mod tests {
     #[tokio::test]
     async fn test_parse_extraction_response_missing_memories() {
         let llm = Arc::new(MockLlmClient::new());
-        let compressor = Compressor::new(llm, test_config(), 0.2);
+        let compressor = Compressor::new(llm, test_config());
 
         let json = serde_json::json!({
             "other_field": "value"
@@ -510,7 +507,7 @@ mod tests {
     #[tokio::test]
     async fn test_parse_extraction_response_memories_not_array() {
         let llm = Arc::new(MockLlmClient::new());
-        let compressor = Compressor::new(llm, test_config(), 0.2);
+        let compressor = Compressor::new(llm, test_config());
 
         let json = serde_json::json!({
             "memories": "not an array"
@@ -523,7 +520,7 @@ mod tests {
     #[tokio::test]
     async fn test_parse_extraction_response_missing_lossless_restatement() {
         let llm = Arc::new(MockLlmClient::new());
-        let compressor = Compressor::new(llm, test_config(), 0.2);
+        let compressor = Compressor::new(llm, test_config());
 
         let json = serde_json::json!({
             "memories": [
@@ -540,7 +537,7 @@ mod tests {
     #[tokio::test]
     async fn test_parse_extraction_response_empty_arrays() {
         let llm = Arc::new(MockLlmClient::new());
-        let compressor = Compressor::new(llm, test_config(), 0.2);
+        let compressor = Compressor::new(llm, test_config());
 
         let json = serde_json::json!({
             "memories": [
@@ -567,7 +564,7 @@ mod tests {
     #[tokio::test]
     async fn test_parse_extraction_response_null_strings() {
         let llm = Arc::new(MockLlmClient::new());
-        let compressor = Compressor::new(llm, test_config(), 0.2);
+        let compressor = Compressor::new(llm, test_config());
 
         let json = serde_json::json!({
             "memories": [
@@ -590,7 +587,7 @@ mod tests {
     #[test]
     fn test_format_conversation() {
         let llm = Arc::new(MockLlmClient::new());
-        let compressor = Compressor::new(llm, test_config(), 0.2);
+        let compressor = Compressor::new(llm, test_config());
 
         let d1 = make_dialogue("User", "Hello");
         let d2 = make_dialogue("Assistant", "Hi there");

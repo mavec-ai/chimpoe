@@ -3,8 +3,7 @@ use crate::config::{
 };
 use anyhow::Result;
 use chimpoe::config::{
-    DEFAULT_LLM_TEMPERATURE, OLLAMA_EMBEDDER_BASE_URL, OLLAMA_LLM_BASE_URL,
-    OPENAI_EMBEDDER_BASE_URL, OPENAI_LLM_BASE_URL,
+    OLLAMA_EMBEDDER_BASE_URL, OLLAMA_LLM_BASE_URL, OPENAI_EMBEDDER_BASE_URL, OPENAI_LLM_BASE_URL,
 };
 use clap::Args;
 use colored::Colorize;
@@ -125,7 +124,6 @@ pub async fn run(args: InitArgs) -> Result<()> {
             },
             model: llm_model.to_string(),
             api_key: llm_api_key,
-            temperature: DEFAULT_LLM_TEMPERATURE,
         },
         embedder: EmbedderConfig {
             provider: embedder_provider_name.to_string(),

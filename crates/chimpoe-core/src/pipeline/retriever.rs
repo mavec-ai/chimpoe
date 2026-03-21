@@ -4,6 +4,7 @@ use crate::traits::{Embedder, LlmClient, Message, MessageRole, VectorStore};
 use crate::types::{MemoryEntry, QueryAnalysis, StructuredSearchParams};
 use std::sync::Arc;
 
+const DEFAULT_TEMPERATURE: f32 = 0.1;
 const QUERY_ANALYSIS_PROMPT: &str = r#"Analyze the following query and extract key information:
 
 Query: {query}
@@ -67,7 +68,7 @@ impl HybridRetriever {
             },
         ];
 
-        match self.llm.chat_completion_with_json(&messages, 0.1).await {
+        match self.llm.chat_completion_with_json(&messages, DEFAULT_TEMPERATURE).await {
             Ok(json) => {
                 if let Ok(analysis) = serde_json::from_value::<QueryAnalysis>(json) {
                     tracing::debug!("Query analysis: {:?}", analysis);

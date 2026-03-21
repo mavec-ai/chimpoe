@@ -30,7 +30,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             model: "gpt-4o-mini".to_string(),
             base_url: None,
             api_key: Some(api_key.clone()),
-            temperature: 0.5,
         },
         embedding: EmbeddingConfig {
             provider: Provider::OpenAI,

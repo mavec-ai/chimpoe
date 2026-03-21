@@ -9,7 +9,6 @@ pub const OLLAMA_EMBEDDER_BASE_URL: &str = "http://localhost:11434";
 pub const OPENAI_LLM_BASE_URL: &str = "https://api.openai.com/v1";
 pub const OPENAI_EMBEDDER_BASE_URL: &str = "https://api.openai.com/v1";
 
-pub const DEFAULT_LLM_TEMPERATURE: f32 = 0.7;
 pub const DEFAULT_WINDOW_SIZE: usize = 10;
 pub const DEFAULT_SEMANTIC_TOP_K: usize = 5;
 pub const DEFAULT_KEYWORD_TOP_K: usize = 3;
@@ -72,7 +71,6 @@ pub struct LlmConfig {
     pub model: String,
     pub base_url: Option<String>,
     pub api_key: Option<String>,
-    pub temperature: f32,
 }
 
 impl Default for LlmConfig {
@@ -82,7 +80,6 @@ impl Default for LlmConfig {
             model: OLLAMA_LLM_MODEL.to_string(),
             base_url: Some(OLLAMA_LLM_BASE_URL.to_string()),
             api_key: None,
-            temperature: DEFAULT_LLM_TEMPERATURE,
         }
     }
 }

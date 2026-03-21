@@ -1,8 +1,7 @@
 use anyhow::{Context, Result};
 use chimpoe::config::{
-    DEFAULT_KEYWORD_TOP_K, DEFAULT_LLM_TEMPERATURE, DEFAULT_SEMANTIC_TOP_K,
-    DEFAULT_STRUCTURED_TOP_K, DEFAULT_WINDOW_SIZE, OLLAMA_EMBEDDER_BASE_URL, OLLAMA_EMBEDDER_MODEL,
-    OLLAMA_LLM_BASE_URL, OLLAMA_LLM_MODEL,
+    DEFAULT_KEYWORD_TOP_K, DEFAULT_SEMANTIC_TOP_K, DEFAULT_STRUCTURED_TOP_K, DEFAULT_WINDOW_SIZE,
+    OLLAMA_EMBEDDER_BASE_URL, OLLAMA_EMBEDDER_MODEL, OLLAMA_LLM_BASE_URL, OLLAMA_LLM_MODEL,
 };
 use serde::{Deserialize, Serialize};
 use std::fs;
@@ -49,8 +48,6 @@ pub struct LlmConfig {
     pub model: String,
     #[serde(default)]
     pub api_key: Option<String>,
-    #[serde(default = "default_llm_temperature")]
-    pub temperature: f32,
 }
 
 impl Default for LlmConfig {
@@ -60,13 +57,8 @@ impl Default for LlmConfig {
             base_url: default_llm_base_url(),
             model: default_llm_model(),
             api_key: None,
-            temperature: default_llm_temperature(),
         }
     }
-}
-
-fn default_llm_temperature() -> f32 {
-    DEFAULT_LLM_TEMPERATURE
 }
 
 fn default_llm_provider() -> String {

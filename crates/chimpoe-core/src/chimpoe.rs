@@ -2,8 +2,8 @@ use crate::config::Config;
 use crate::embed::OllamaEmbedder;
 use crate::error::Result;
 use crate::llm::OllamaLlm;
-use crate::pipeline::{Compressor, HybridRetriever, Synthesizer};
-use crate::traits::{Embedder, LlmClient, Message, MessageRole, VectorStore};
+use crate::pipeline::{AnswerGenerator, Compressor, HybridRetriever, Synthesizer};
+use crate::traits::{Embedder, LlmClient, VectorStore};
 use crate::types::{Dialogue, MemoryEntry};
 use crate::vector::InMemoryVector;
 use std::sync::Arc;
@@ -61,11 +61,7 @@ impl ChimpoeBuilder {
             .or_else(|| Some(Arc::new(OllamaLlm::new(&self.config.llm)) as Arc<dyn LlmClient>));
 
         let compressor = llm.as_ref().map(|l| {
-            Compressor::new(
-                l.clone(),
-                self.config.pipeline.clone(),
-                self.config.llm.temperature,
-            )
+            Compressor::new(l.clone(), self.config.pipeline.clone())
         });
 
         let retriever = llm.as_ref().map(|l| {
@@ -201,6 +197,10 @@ impl Chimpoe {
     }
 
     pub async fn ask(&self, question: &str) -> Result<String> {
+        self.ask_with_top_k(question, 5).await
+    }
+
+    pub async fn ask_with_top_k(&self, question: &str, top_k: usize) -> Result<String> {
         let llm = match &self.llm {
             Some(l) => l,
             None => {
@@ -210,39 +210,10 @@ impl Chimpoe {
             }
         };
 
-        let search_result = self.search(question, Some(5)).await?;
-
-        let context = if search_result.results.is_empty() {
-            "No relevant memories found.".to_string()
-        } else {
-            search_result
-                .results
-                .iter()
-                .map(|m| format!("- {}", m.memory))
-                .collect::<Vec<_>>()
-                .join("\n")
-        };
-
-        let system_prompt = format!(
-            "You are a helpful assistant. Answer the question based on the following memories:\n\n{}",
-            context
-        );
-
-        let messages = vec![
-            Message {
-                role: MessageRole::System,
-                content: system_prompt,
-            },
-            Message {
-                role: MessageRole::User,
-                content: question.to_string(),
-            },
-        ];
-
-        let response = llm
-            .chat_completion(&messages, self.config.llm.temperature)
-            .await?;
-        Ok(response)
+        let search_result = self.search(question, Some(top_k)).await?;
+        let generator = AnswerGenerator::new(llm.clone());
+        let answer = generator.generate(question, &search_result.results).await?;
+        Ok(answer)
     }
 
     pub async fn memory_count(&self) -> usize {

@@ -21,5 +21,5 @@ pub use types::{Dialogue, MemoryEntry};
 pub use chimpoe::{Chimpoe, ChimpoeBuilder, MemoryHit, SearchResult};
 pub use embed::{OllamaEmbedder, OpenAIEmbedder};
 pub use llm::{OllamaLlm, OpenAILlm};
-pub use pipeline::{Compressor, HybridRetriever, RetrievalHit, Synthesizer};
+pub use pipeline::{AnswerGenerator, Compressor, HybridRetriever, RetrievalHit, Synthesizer};
 pub use vector::{InMemoryVector, SqliteVector};

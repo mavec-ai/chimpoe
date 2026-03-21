@@ -41,7 +41,6 @@ pub fn create_llm(config: &CliConfig) -> Result<Arc<dyn LlmClient>> {
         model: config.llm.model.clone(),
         base_url: Some(config.llm.base_url.clone()),
         api_key: config.llm.api_key.clone(),
-        temperature: config.llm.temperature,
     };
 
     match provider {
