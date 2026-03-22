@@ -32,7 +32,7 @@ async fn main() -> anyhow::Result<()> {
 
     let result = match cli.command {
         Commands::Init(args) => commands::init::run(args).await,
-        Commands::Add(args) => commands::add::run(args, &config).await,
+        Commands::Add(args) => commands::add::run(args, &config),
         Commands::Finalize(args) => commands::finalize::run(args, &config).await,
         Commands::Search(args) => commands::search::run(args, &config).await,
         Commands::Ask(args) => commands::ask::run(args, &config).await,

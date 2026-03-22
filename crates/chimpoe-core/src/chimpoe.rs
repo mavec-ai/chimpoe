@@ -42,6 +42,7 @@ impl ChimpoeBuilder {
         self
     }
 
+    #[must_use]
     pub fn config(mut self, config: Config) -> Self {
         self.config = config;
         self
@@ -60,9 +61,9 @@ impl ChimpoeBuilder {
             .llm
             .or_else(|| Some(Arc::new(OllamaLlm::new(&self.config.llm)) as Arc<dyn LlmClient>));
 
-        let compressor = llm.as_ref().map(|l| {
-            Compressor::new(l.clone(), self.config.pipeline.clone())
-        });
+        let compressor = llm
+            .as_ref()
+            .map(|l| Compressor::new(l.clone(), self.config.pipeline.clone()));
 
         let retriever = llm.as_ref().map(|l| {
             HybridRetriever::new(
@@ -86,6 +87,7 @@ impl ChimpoeBuilder {
 }
 
 impl Chimpoe {
+    #[must_use]
     pub fn builder() -> ChimpoeBuilder {
         ChimpoeBuilder::default()
     }
@@ -220,7 +222,8 @@ impl Chimpoe {
         self.vector_store.count().await.unwrap_or(0)
     }
 
-    pub fn dialogue_count(&self) -> usize {
+    #[must_use]
+    pub const fn dialogue_count(&self) -> usize {
         self.dialogues.len()
     }
 
@@ -262,7 +265,7 @@ impl std::fmt::Display for SearchResult {
                 writeln!(f, "   Entities: {:?}", hit.entities)?;
             }
             if let Some(ref loc) = hit.location {
-                writeln!(f, "   Location: {}", loc)?;
+                writeln!(f, "   Location: {loc}")?;
             }
         }
         Ok(())

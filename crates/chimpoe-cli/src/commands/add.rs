@@ -26,8 +26,8 @@ pub struct AddArgs {
     pub timestamp: Option<String>,
 }
 
-pub async fn run(args: AddArgs, config: &CliConfig) -> Result<()> {
-    config.ensure_directories()?;
+pub fn run(args: AddArgs, config: &CliConfig) -> Result<()> {
+    crate::config::ensure_directories()?;
 
     let mut dialogues = buffer::load()?;
 
@@ -45,7 +45,7 @@ pub async fn run(args: AddArgs, config: &CliConfig) -> Result<()> {
     println!("{} Dialogue added", "✓".green());
     println!("  Speaker: {}", args.speaker.cyan());
     println!("  Content: {}", args.content);
-    println!("\n  Buffer: {}/{} dialogues", buffer_count, window_size);
+    println!("\n  Buffer: {buffer_count}/{window_size} dialogues");
 
     if buffer_count >= window_size {
         println!(

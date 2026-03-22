@@ -157,7 +157,7 @@ pub async fn run(args: InitArgs) -> Result<()> {
 
 fn select_provider(name: &str, items: &[&str]) -> Result<usize> {
     let selection = Select::new()
-        .with_prompt(format!("Choose your {} provider", name))
+        .with_prompt(format!("Choose your {name} provider"))
         .items(items)
         .default(0)
         .interact()?;
@@ -166,7 +166,7 @@ fn select_provider(name: &str, items: &[&str]) -> Result<usize> {
 
 fn select_model<'a>(name: &str, models: &'a [&str]) -> Result<(usize, &'a str)> {
     let selection = Select::new()
-        .with_prompt(format!("Select {} model", name))
+        .with_prompt(format!("Select {name} model"))
         .items(models)
         .default(0)
         .interact()?;
@@ -175,7 +175,7 @@ fn select_model<'a>(name: &str, models: &'a [&str]) -> Result<(usize, &'a str)> 
 
 fn prompt_api_key(provider: &str) -> Result<Option<String>> {
     let api_key: String = Password::new()
-        .with_prompt(format!("Enter {} API Key", provider))
+        .with_prompt(format!("Enter {provider} API Key"))
         .interact()?;
     if api_key.is_empty() {
         Ok(None)
@@ -195,7 +195,7 @@ fn prompt_window_size() -> Result<usize> {
 async fn check_ollama(config: &CliConfig) -> Result<()> {
     let client = reqwest::Client::new();
     let base_url = config.embedder.base_url.trim_end_matches("/api/embed");
-    let tags_url = format!("{}/api/tags", base_url);
+    let tags_url = format!("{base_url}/api/tags");
 
     match client.get(&tags_url).send().await {
         Ok(resp) if resp.status().is_success() => {
@@ -253,7 +253,7 @@ fn parse_ollama_models(json: &str) -> Vec<String> {
                 .filter_map(|m| {
                     m.get("name")
                         .and_then(|n| n.as_str())
-                        .map(|s| s.to_string())
+                        .map(std::string::ToString::to_string)
                 })
                 .collect()
         })
@@ -274,7 +274,7 @@ fn print_summary(config: &CliConfig) {
     println!("\n{}", " Configuration ".black().on_green().bold());
 
     let border = "─".repeat(width);
-    println!("┌{}┐", border);
+    println!("┌{border}┐");
 
     let llm = format!("LLM: {} ({})", config.llm.model, config.llm.provider);
     let embedder = format!(
@@ -286,7 +286,7 @@ fn print_summary(config: &CliConfig) {
     println!("│{}│", pad_to_width(&llm, width));
     println!("│{}│", pad_to_width(&embedder, width));
     println!("│{}│", pad_to_width(&window, width));
-    println!("└{}┘", border);
+    println!("└{border}┘");
 
     println!("\n{}", "Chimpoe is ready!".green().bold());
     println!("\nQuick start:");

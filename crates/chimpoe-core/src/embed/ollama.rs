@@ -24,6 +24,7 @@ struct EmbedResponse {
 }
 
 impl OllamaEmbedder {
+    #[must_use]
     pub fn new(config: &EmbeddingConfig) -> Self {
         let dimension = if config.dimension > 0 {
             config.dimension
@@ -43,18 +44,19 @@ impl OllamaEmbedder {
 
     fn default_dimension(model: &str) -> usize {
         match model {
-            "nomic-embed-text" => 768,
             "mxbai-embed-large" => 1024,
             "all-minilm" => 384,
             _ => 768,
         }
     }
 
+    #[must_use]
     pub fn with_base_url(mut self, base_url: String) -> Self {
         self.base_url = base_url;
         self
     }
 
+    #[must_use]
     pub fn with_model(mut self, model: String) -> Self {
         self.model = model;
         self
@@ -66,7 +68,7 @@ impl Embedder for OllamaEmbedder {
     async fn encode(&self, texts: &[&str]) -> EmbeddingResult<Vec<Vec<f32>>> {
         let request = EmbedRequest {
             model: self.model.clone(),
-            input: texts.iter().map(|s| s.to_string()).collect(),
+            input: texts.iter().map(std::string::ToString::to_string).collect(),
         };
 
         let url = format!("{}/api/embed", self.base_url);
@@ -81,10 +83,7 @@ impl Embedder for OllamaEmbedder {
         if !response.status().is_success() {
             let status = response.status();
             let body = response.text().await.unwrap_or_default();
-            return Err(EmbeddingError::ApiError(format!(
-                "HTTP {}: {}",
-                status, body
-            )));
+            return Err(EmbeddingError::ApiError(format!("HTTP {status}: {body}")));
         }
 
         let embed_response: EmbedResponse = response

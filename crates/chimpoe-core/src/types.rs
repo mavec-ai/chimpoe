@@ -20,6 +20,7 @@ pub struct MemoryEntry {
 }
 
 impl MemoryEntry {
+    #[must_use]
     pub fn new(lossless_restatement: String) -> Self {
         Self {
             entry_id: Uuid::new_v4(),
@@ -33,31 +34,37 @@ impl MemoryEntry {
         }
     }
 
+    #[must_use]
     pub fn with_keywords(mut self, keywords: Vec<String>) -> Self {
         self.keywords = keywords;
         self
     }
 
-    pub fn with_timestamp(mut self, timestamp: DateTime<Utc>) -> Self {
+    #[must_use]
+    pub const fn with_timestamp(mut self, timestamp: DateTime<Utc>) -> Self {
         self.timestamp = Some(timestamp);
         self
     }
 
+    #[must_use]
     pub fn with_location(mut self, location: String) -> Self {
         self.location = Some(location);
         self
     }
 
+    #[must_use]
     pub fn with_persons(mut self, persons: Vec<String>) -> Self {
         self.persons = persons;
         self
     }
 
+    #[must_use]
     pub fn with_entities(mut self, entities: Vec<String>) -> Self {
         self.entities = entities;
         self
     }
 
+    #[must_use]
     pub fn with_topic(mut self, topic: String) -> Self {
         self.topic = Some(topic);
         self
@@ -80,6 +87,7 @@ impl Dialogue {
         }
     }
 
+    #[must_use]
     pub fn with_timestamp(mut self, timestamp: impl Into<String>) -> Self {
         self.timestamp = Some(timestamp.into());
         self
@@ -103,6 +111,7 @@ pub struct TimeRange {
 }
 
 impl TimeRange {
+    #[must_use]
     pub fn parse(expression: &str) -> Option<Self> {
         let base_time = Utc::now();
         let lower = expression.to_lowercase();

@@ -27,7 +27,7 @@ struct MemoryRow {
 }
 
 pub async fn run(args: SearchArgs, config: &CliConfig) -> Result<()> {
-    config.ensure_directories()?;
+    crate::config::ensure_directories()?;
 
     let vector_store = Arc::new(SqliteVector::new(
         &config.storage.path.to_string_lossy(),
@@ -84,7 +84,7 @@ pub async fn run(args: SearchArgs, config: &CliConfig) -> Result<()> {
         .collect();
 
     let table = Table::new(rows).with(Style::rounded()).to_string();
-    println!("{}", table);
+    println!("{table}");
 
     println!("\n  Found {} memories", result.results.len());
 

@@ -37,7 +37,11 @@ impl AnswerGenerator {
         let mut last_raw_response: Option<String> = None;
 
         for _attempt in 1..=MAX_RETRIES {
-            match self.llm.chat_completion_with_json(&messages, DEFAULT_TEMPERATURE).await {
+            match self
+                .llm
+                .chat_completion_with_json(&messages, DEFAULT_TEMPERATURE)
+                .await
+            {
                 Ok(response) => {
                     if let Some(answer) = Self::extract_answer(&response) {
                         return Ok(answer);
@@ -45,7 +49,11 @@ impl AnswerGenerator {
                     last_raw_response = Some(response.to_string());
                 }
                 Err(_) => {
-                    if let Ok(raw) = self.llm.chat_completion(&messages, DEFAULT_TEMPERATURE).await {
+                    if let Ok(raw) = self
+                        .llm
+                        .chat_completion(&messages, DEFAULT_TEMPERATURE)
+                        .await
+                    {
                         last_raw_response = Some(raw);
                     }
                 }
@@ -101,7 +109,7 @@ impl AnswerGenerator {
             .as_object()
             .and_then(|obj| obj.get("answer"))
             .and_then(|a| a.as_str())
-            .map(|s| s.to_string())
+            .map(std::string::ToString::to_string)
     }
 
     fn format_contexts(contexts: &[MemoryHit]) -> String {
@@ -113,10 +121,10 @@ impl AnswerGenerator {
                 parts.push(format!("Content: {}", hit.memory));
 
                 if let Some(ref ts) = hit.timestamp {
-                    parts.push(format!("Time: {}", ts));
+                    parts.push(format!("Time: {ts}"));
                 }
                 if let Some(ref loc) = hit.location {
-                    parts.push(format!("Location: {}", loc));
+                    parts.push(format!("Location: {loc}"));
                 }
                 if !hit.persons.is_empty() {
                     parts.push(format!("Persons: {}", hit.persons.join(", ")));
@@ -125,7 +133,7 @@ impl AnswerGenerator {
                     parts.push(format!("Related Entities: {}", hit.entities.join(", ")));
                 }
                 if let Some(ref topic) = hit.topic {
-                    parts.push(format!("Topic: {}", topic));
+                    parts.push(format!("Topic: {topic}"));
                 }
 
                 parts.join("\n")
@@ -170,9 +178,7 @@ Output:
 }}
 ```
 
-Now answer the question. Return ONLY the JSON, no other text."#,
-            question = question,
-            context = context
+Now answer the question. Return ONLY the JSON, no other text."#
         )
     }
 }
@@ -184,13 +190,19 @@ mod tests {
     #[test]
     fn test_extract_answer() {
         let json = serde_json::json!({"answer": "Test answer"});
-        assert_eq!(AnswerGenerator::extract_answer(&json), Some("Test answer".to_string()));
+        assert_eq!(
+            AnswerGenerator::extract_answer(&json),
+            Some("Test answer".to_string())
+        );
 
         let json_with_reasoning = serde_json::json!({
             "reasoning": "Some reasoning",
             "answer": "Final answer"
         });
-        assert_eq!(AnswerGenerator::extract_answer(&json_with_reasoning), Some("Final answer".to_string()));
+        assert_eq!(
+            AnswerGenerator::extract_answer(&json_with_reasoning),
+            Some("Final answer".to_string())
+        );
 
         let json_no_answer = serde_json::json!({"reasoning": "Only reasoning"});
         assert_eq!(AnswerGenerator::extract_answer(&json_no_answer), None);
@@ -202,7 +214,10 @@ mod tests {
     #[test]
     fn test_try_extract_json_from_text_direct_json() {
         let text = r#"{"answer": "Direct answer"}"#;
-        assert_eq!(AnswerGenerator::try_extract_json_from_text(text), Some("Direct answer".to_string()));
+        assert_eq!(
+            AnswerGenerator::try_extract_json_from_text(text),
+            Some("Direct answer".to_string())
+        );
     }
 
     #[test]
@@ -212,7 +227,10 @@ mod tests {
 {"answer": "Block answer"}
 ```
 Some extra text"#;
-        assert_eq!(AnswerGenerator::try_extract_json_from_text(text), Some("Block answer".to_string()));
+        assert_eq!(
+            AnswerGenerator::try_extract_json_from_text(text),
+            Some("Block answer".to_string())
+        );
     }
 
     #[test]
@@ -221,7 +239,10 @@ Some extra text"#;
 ```
 {"answer": "Code block answer"}
 ```"#;
-        assert_eq!(AnswerGenerator::try_extract_json_from_text(text), Some("Code block answer".to_string()));
+        assert_eq!(
+            AnswerGenerator::try_extract_json_from_text(text),
+            Some("Code block answer".to_string())
+        );
     }
 
     #[test]
@@ -234,7 +255,10 @@ Some extra text"#;
 }
 ```
 "#;
-        assert_eq!(AnswerGenerator::try_extract_json_from_text(text), Some("Whitespace answer".to_string()));
+        assert_eq!(
+            AnswerGenerator::try_extract_json_from_text(text),
+            Some("Whitespace answer".to_string())
+        );
     }
 
     #[test]

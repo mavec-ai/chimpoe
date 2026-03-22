@@ -2,9 +2,11 @@ use crate::config::RetrievalConfig;
 use crate::error::Result;
 use crate::traits::{Embedder, LlmClient, Message, MessageRole, VectorStore};
 use crate::types::{MemoryEntry, QueryAnalysis, StructuredSearchParams};
+use std::collections::HashMap;
 use std::sync::Arc;
 
 const DEFAULT_TEMPERATURE: f32 = 0.1;
+const RRF_K: f32 = 60.0;
 const QUERY_ANALYSIS_PROMPT: &str = r#"Analyze the following query and extract key information:
 
 Query: {query}
@@ -68,7 +70,11 @@ impl HybridRetriever {
             },
         ];
 
-        match self.llm.chat_completion_with_json(&messages, DEFAULT_TEMPERATURE).await {
+        match self
+            .llm
+            .chat_completion_with_json(&messages, DEFAULT_TEMPERATURE)
+            .await
+        {
             Ok(json) => {
                 if let Ok(analysis) = serde_json::from_value::<QueryAnalysis>(json) {
                     tracing::debug!("Query analysis: {:?}", analysis);
@@ -88,16 +94,16 @@ impl HybridRetriever {
 
         let query_analysis = self.analyze_query(query).await;
 
-        let keywords = query_analysis
-            .as_ref()
-            .map(|a| a.keywords.clone())
-            .unwrap_or_else(|| {
+        let keywords = query_analysis.as_ref().map_or_else(
+            || {
                 query
                     .split_whitespace()
                     .filter(|w| w.len() > 2)
                     .map(String::from)
                     .collect()
-            });
+            },
+            |a| a.keywords.clone(),
+        );
 
         let structured_params = query_analysis.as_ref().and_then(|analysis| {
             let has_structured_conditions = !analysis.persons.is_empty()
@@ -132,7 +138,7 @@ impl HybridRetriever {
             tokio::try_join!(semantic_fut, lexical_fut, structured_fut)?;
 
         let merged =
-            self.merge_and_deduplicate(structured_results, semantic_results, lexical_results, k);
+            Self::merge_and_deduplicate(structured_results, semantic_results, lexical_results, k);
 
         Ok(merged)
     }
@@ -166,35 +172,62 @@ impl HybridRetriever {
     }
 
     fn merge_and_deduplicate(
-        &self,
         structured: Vec<MemoryEntry>,
         semantic: Vec<MemoryEntry>,
         lexical: Vec<MemoryEntry>,
         top_k: usize,
     ) -> Vec<RetrievalHit> {
-        let mut seen_ids = std::collections::HashSet::new();
-        let mut merged = Vec::new();
+        let channels: [(&str, Vec<MemoryEntry>); 3] = [
+            ("structured", structured),
+            ("lexical", lexical),
+            ("semantic", semantic),
+        ];
 
-        for entry in structured {
-            if seen_ids.insert(entry.entry_id) {
-                merged.push(RetrievalHit::from_entry(entry, "structured"));
+        Self::reciprocal_rank_fusion(&channels, top_k)
+    }
+
+    fn reciprocal_rank_fusion(
+        channels: &[(&str, Vec<MemoryEntry>)],
+        top_k: usize,
+    ) -> Vec<RetrievalHit> {
+        let mut rrf_scores: HashMap<uuid::Uuid, f64> = HashMap::new();
+        let mut entries_by_id: HashMap<uuid::Uuid, MemoryEntry> = HashMap::new();
+        let mut source_by_id: HashMap<uuid::Uuid, String> = HashMap::new();
+
+        for (channel_name, entries) in channels {
+            for (rank, entry) in entries.iter().enumerate() {
+                let rank_1_based = rank + 1;
+                let rrf_score = 1.0 / (f64::from(RRF_K) + rank_1_based as f64);
+
+                *rrf_scores.entry(entry.entry_id).or_default() += rrf_score;
+                entries_by_id
+                    .entry(entry.entry_id)
+                    .or_insert_with(|| entry.clone());
+                source_by_id
+                    .entry(entry.entry_id)
+                    .or_insert_with(|| channel_name.to_string());
             }
         }
 
-        for entry in semantic {
-            if seen_ids.insert(entry.entry_id) {
-                merged.push(RetrievalHit::from_entry(entry, "semantic"));
-            }
-        }
+        let mut scored_entries: Vec<_> = rrf_scores.into_iter().collect();
+        scored_entries.sort_by(|a, b| {
+            b.1.partial_cmp(&a.1)
+                .unwrap_or(std::cmp::Ordering::Equal)
+                .then_with(|| a.0.cmp(&b.0))
+        });
+        scored_entries.truncate(top_k);
 
-        for entry in lexical {
-            if seen_ids.insert(entry.entry_id) {
-                merged.push(RetrievalHit::from_entry(entry, "lexical"));
-            }
-        }
-
-        merged.truncate(top_k);
-        merged
+        scored_entries
+            .into_iter()
+            .map(|(id, score)| {
+                let entry = entries_by_id.get(&id).cloned().unwrap();
+                let source = source_by_id
+                    .get(&id)
+                    .cloned()
+                    .unwrap_or_else(|| "rrf".to_string());
+                RetrievalHit::from_entry_with_score(entry, &source, score as f32)
+            })
+            .collect()
     }
 }
 
@@ -207,9 +240,11 @@ pub struct RetrievalHit {
     pub topic: Option<String>,
     pub timestamp: Option<String>,
     pub source: String,
+    pub score: f32,
 }
 
 impl RetrievalHit {
+    #[must_use]
     pub fn from_entry(entry: MemoryEntry, source: &str) -> Self {
         Self {
             memory: entry.lossless_restatement,
@@ -219,6 +254,21 @@ impl RetrievalHit {
             topic: entry.topic,
             timestamp: entry.timestamp.map(|t| t.to_rfc3339()),
             source: source.to_string(),
+            score: 0.0,
+        }
+    }
+
+    #[must_use]
+    pub fn from_entry_with_score(entry: MemoryEntry, source: &str, score: f32) -> Self {
+        Self {
+            memory: entry.lossless_restatement,
+            persons: entry.persons,
+            entities: entry.entities,
+            location: entry.location,
+            topic: entry.topic,
+            timestamp: entry.timestamp.map(|t| t.to_rfc3339()),
+            source: source.to_string(),
+            score,
         }
     }
 }
@@ -233,7 +283,7 @@ impl std::fmt::Display for RetrievalHit {
             write!(f, " | Entities: {:?}", self.entities)?;
         }
         if let Some(ref loc) = self.location {
-            write!(f, " | Location: {}", loc)?;
+            write!(f, " | Location: {loc}")?;
         }
         Ok(())
     }
@@ -345,7 +395,12 @@ mod tests {
             .unwrap();
         assert_eq!(results.len(), 1);
         assert_eq!(results[0].memory, "User likes pizza");
-        assert_eq!(results[0].source, "semantic");
+        let valid_sources = ["semantic", "lexical", "rrf"];
+        assert!(
+            valid_sources.contains(&results[0].source.as_str()),
+            "Expected valid source, got {}",
+            results[0].source
+        );
     }
 
     #[tokio::test]
@@ -408,49 +463,34 @@ mod tests {
 
     #[test]
     fn test_merge_and_deduplicate_removes_duplicates() {
-        let llm = MockLlmClient::new();
-        let vector_store = MockVectorStore::new();
-        let embedder = MockEmbedder::new(128);
-        let retriever = create_retriever(llm, vector_store, embedder);
-
         let entry = make_entry("Test memory");
         let structured = vec![entry.clone()];
         let semantic = vec![entry.clone()];
         let lexical = vec![entry];
 
-        let merged = retriever.merge_and_deduplicate(structured, semantic, lexical, 10);
+        let merged = HybridRetriever::merge_and_deduplicate(structured, semantic, lexical, 10);
 
         assert_eq!(merged.len(), 1);
     }
 
     #[test]
     fn test_merge_and_deduplicate_respects_top_k() {
-        let llm = MockLlmClient::new();
-        let vector_store = MockVectorStore::new();
-        let embedder = MockEmbedder::new(128);
-        let retriever = create_retriever(llm, vector_store, embedder);
-
         let entries: Vec<MemoryEntry> = (0..10)
-            .map(|i| make_entry(&format!("Memory {}", i)))
+            .map(|i| make_entry(&format!("Memory {i}")))
             .collect();
 
-        let merged = retriever.merge_and_deduplicate(entries.clone(), vec![], vec![], 3);
+        let merged = HybridRetriever::merge_and_deduplicate(entries, vec![], vec![], 3);
 
         assert_eq!(merged.len(), 3);
     }
 
     #[test]
     fn test_merge_and_deduplicate_combines_sources() {
-        let llm = MockLlmClient::new();
-        let vector_store = MockVectorStore::new();
-        let embedder = MockEmbedder::new(128);
-        let retriever = create_retriever(llm, vector_store, embedder);
-
         let structured = vec![make_entry("Structured memory")];
         let semantic = vec![make_entry("Semantic memory")];
         let lexical = vec![make_entry("Lexical memory")];
 
-        let merged = retriever.merge_and_deduplicate(structured, semantic, lexical, 10);
+        let merged = HybridRetriever::merge_and_deduplicate(structured, semantic, lexical, 10);
 
         assert_eq!(merged.len(), 3);
         let sources: Vec<&str> = merged.iter().map(|h| h.source.as_str()).collect();
@@ -487,9 +527,10 @@ mod tests {
             topic: None,
             timestamp: None,
             source: "semantic".to_string(),
+            score: 0.0167,
         };
 
-        let display = format!("{}", hit);
+        let display = format!("{hit}");
         assert!(display.contains("Test memory"));
         assert!(display.contains("semantic"));
         assert!(display.contains("Alice"));
@@ -507,9 +548,10 @@ mod tests {
             topic: None,
             timestamp: None,
             source: "lexical".to_string(),
+            score: 0.0,
         };
 
-        let display = format!("{}", hit);
+        let display = format!("{hit}");
         assert_eq!(display, "Simple memory [lexical]");
     }
 

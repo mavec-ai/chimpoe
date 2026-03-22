@@ -21,7 +21,7 @@ pub fn ensure_directories() -> Result<()> {
     let dir = chimpoe_dir();
     if !dir.exists() {
         fs::create_dir_all(&dir)
-            .with_context(|| format!("Failed to create directory {:?}", dir))?;
+            .with_context(|| format!("Failed to create directory {}", dir.display()))?;
     }
     Ok(())
 }
@@ -99,7 +99,7 @@ impl Default for EmbedderConfig {
     }
 }
 
-fn default_embedder_dimension() -> usize {
+const fn default_embedder_dimension() -> usize {
     768
 }
 
@@ -163,19 +163,19 @@ impl Default for MemoryConfig {
     }
 }
 
-fn default_window_size() -> usize {
+const fn default_window_size() -> usize {
     DEFAULT_WINDOW_SIZE
 }
 
-fn default_semantic_top_k() -> usize {
+const fn default_semantic_top_k() -> usize {
     DEFAULT_SEMANTIC_TOP_K
 }
 
-fn default_keyword_top_k() -> usize {
+const fn default_keyword_top_k() -> usize {
     DEFAULT_KEYWORD_TOP_K
 }
 
-fn default_structured_top_k() -> usize {
+const fn default_structured_top_k() -> usize {
     DEFAULT_STRUCTURED_TOP_K
 }
 
@@ -187,31 +187,23 @@ impl CliConfig {
         }
 
         let content = fs::read_to_string(&path)
-            .with_context(|| format!("Failed to read config from {:?}", path))?;
+            .with_context(|| format!("Failed to read config from {}", path.display()))?;
 
-        toml::from_str(&content).with_context(|| format!("Failed to parse config from {:?}", path))
+        toml::from_str(&content)
+            .with_context(|| format!("Failed to parse config from {}", path.display()))
     }
 
     pub fn save(&self) -> Result<()> {
         let dir = chimpoe_dir();
         if !dir.exists() {
             fs::create_dir_all(&dir)
-                .with_context(|| format!("Failed to create directory {:?}", dir))?;
+                .with_context(|| format!("Failed to create directory {}", dir.display()))?;
         }
 
         let content = toml::to_string_pretty(self).context("Failed to serialize config")?;
 
         fs::write(config_path(), content).context("Failed to write config file")?;
 
-        Ok(())
-    }
-
-    pub fn ensure_directories(&self) -> Result<()> {
-        let dir = chimpoe_dir();
-        if !dir.exists() {
-            fs::create_dir_all(&dir)
-                .with_context(|| format!("Failed to create directory {:?}", dir))?;
-        }
         Ok(())
     }
 }

@@ -31,7 +31,7 @@ struct MemoryRow {
 }
 
 pub async fn run(args: ListArgs, config: &CliConfig) -> Result<()> {
-    config.ensure_directories()?;
+    crate::config::ensure_directories()?;
 
     let vector_store = Arc::new(SqliteVector::new(
         &config.storage.path.to_string_lossy(),
@@ -76,8 +76,7 @@ pub async fn run(args: ListArgs, config: &CliConfig) -> Result<()> {
             topic: m.topic.as_deref().unwrap_or("-").to_string(),
             timestamp: m
                 .timestamp
-                .map(|t| t.format("%Y-%m-%d").to_string())
-                .unwrap_or_else(|| "-".to_string()),
+                .map_or_else(|| "-".to_string(), |t| t.format("%Y-%m-%d").to_string()),
         })
         .collect();
 
@@ -85,12 +84,12 @@ pub async fn run(args: ListArgs, config: &CliConfig) -> Result<()> {
     println!();
 
     let table = Table::new(rows).with(Style::rounded()).to_string();
-    println!("{}", table);
+    println!("{table}");
 
     if total > args.limit {
         println!("\n  Showing {} of {} memories", args.limit, total);
     } else {
-        println!("\n  Total: {} memories", total);
+        println!("\n  Total: {total} memories");
     }
 
     Ok(())

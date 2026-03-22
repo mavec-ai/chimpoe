@@ -40,6 +40,7 @@ struct OpenAIError {
 }
 
 impl OpenAIEmbedder {
+    #[must_use]
     pub fn new(config: &EmbeddingConfig) -> Self {
         let dimension = if config.dimension > 0 {
             config.dimension
@@ -60,23 +61,24 @@ impl OpenAIEmbedder {
 
     fn default_dimension(model: &str) -> usize {
         match model {
-            "text-embedding-3-small" => 1536,
             "text-embedding-3-large" => 3072,
-            "text-embedding-ada-002" => 1536,
             _ => 1536,
         }
     }
 
+    #[must_use]
     pub fn with_api_key(mut self, api_key: String) -> Self {
         self.api_key = api_key;
         self
     }
 
+    #[must_use]
     pub fn with_base_url(mut self, base_url: String) -> Self {
         self.base_url = base_url;
         self
     }
 
+    #[must_use]
     pub fn with_model(mut self, model: String) -> Self {
         self.model = model;
         self
@@ -87,7 +89,7 @@ impl OpenAIEmbedder {
 impl Embedder for OpenAIEmbedder {
     async fn encode(&self, texts: &[&str]) -> EmbeddingResult<Vec<Vec<f32>>> {
         let request = EmbedRequest {
-            input: texts.iter().map(|s| s.to_string()).collect(),
+            input: texts.iter().map(std::string::ToString::to_string).collect(),
             model: self.model.clone(),
         };
 
@@ -113,14 +115,11 @@ impl Embedder for OpenAIEmbedder {
             {
                 return Err(EmbeddingError::ApiError(error.message));
             }
-            return Err(EmbeddingError::ApiError(format!(
-                "HTTP {}: {}",
-                status, body
-            )));
+            return Err(EmbeddingError::ApiError(format!("HTTP {status}: {body}")));
         }
 
         let embed_response: EmbedResponse = serde_json::from_str(&body)
-            .map_err(|e| EmbeddingError::ApiError(format!("Failed to parse response: {}", e)))?;
+            .map_err(|e| EmbeddingError::ApiError(format!("Failed to parse response: {e}")))?;
 
         let embeddings: Vec<Vec<f32>> = embed_response
             .data

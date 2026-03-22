@@ -11,7 +11,7 @@ use std::sync::Arc;
 pub struct FinalizeArgs;
 
 pub async fn run(_args: FinalizeArgs, config: &CliConfig) -> Result<()> {
-    config.ensure_directories()?;
+    crate::config::ensure_directories()?;
 
     let dialogues = buffer::load()?;
 
@@ -70,7 +70,7 @@ pub async fn run(_args: FinalizeArgs, config: &CliConfig) -> Result<()> {
     }
 
     let total_memories = chimpoe.memory_count().await;
-    println!("\n  Total memories: {}", total_memories);
+    println!("\n  Total memories: {total_memories}");
 
     Ok(())
 }

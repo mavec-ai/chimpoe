@@ -40,9 +40,8 @@ impl SqliteVector {
             )));
         }
 
-        let conn = Connection::open(db_path).map_err(|e| {
-            VectorError::ConnectionFailed(format!("Failed to open database: {}", e))
-        })?;
+        let conn = Connection::open(db_path)
+            .map_err(|e| VectorError::ConnectionFailed(format!("Failed to open database: {e}")))?;
 
         conn.execute_batch(&format!(
             r#"
@@ -85,8 +84,7 @@ impl SqliteVector {
                 INSERT INTO {FTS_TABLE}(rowid, lossless_restatement, keywords)
                 VALUES (new.rowid, new.lossless_restatement, new.keywords);
             END;
-            "#,
-            dimension = dimension
+            "#
         ))
         .map_err(|e| VectorError::IndexCreationFailed(e.to_string()))?;
 
@@ -156,7 +154,7 @@ impl VectorStore for SqliteVector {
             let timestamp_str = entry
                 .timestamp
                 .as_ref()
-                .map(|t| t.to_rfc3339())
+                .map(chrono::DateTime::to_rfc3339)
                 .unwrap_or_default();
 
             conn.execute(
@@ -178,7 +176,7 @@ impl VectorStore for SqliteVector {
 
             let rowid: i64 = conn
                 .query_row(
-                    &format!("SELECT rowid FROM {} WHERE id = ?1", META_TABLE),
+                    &format!("SELECT rowid FROM {META_TABLE} WHERE id = ?1"),
                     rusqlite::params![entry.entry_id.to_string()],
                     |row| row.get(0),
                 )
@@ -203,14 +201,14 @@ impl VectorStore for SqliteVector {
 
         let mut stmt = conn
             .prepare(&format!(
-                r#"
+                r"
                 SELECT m.id, m.lossless_restatement, m.keywords, m.persons, m.entities,
                        m.location, m.topic, m.timestamp
                 FROM {TABLE_NAME} v
                 JOIN {META_TABLE} m ON v.rowid = m.rowid
                 WHERE v.embedding MATCH ? AND k = ?
                 ORDER BY v.distance
-                "#
+                "
             ))
             .map_err(|e| VectorError::SearchFailed(e.to_string()))?;
 
@@ -246,7 +244,7 @@ impl VectorStore for SqliteVector {
 
         let mut stmt = conn
             .prepare(&format!(
-                r#"
+                r"
                 SELECT m.id, m.lossless_restatement, m.keywords, m.persons, m.entities,
                        m.location, m.topic, m.timestamp
                 FROM {FTS_TABLE}({FTS_TABLE}, rank)
@@ -254,7 +252,7 @@ impl VectorStore for SqliteVector {
                 WHERE {FTS_TABLE} MATCH ? 
                 ORDER BY rank 
                 LIMIT ?
-                "#
+                "
             ))
             .map_err(|e| VectorError::SearchFailed(e.to_string()))?;
 
@@ -294,7 +292,7 @@ impl VectorStore for SqliteVector {
                 .iter()
                 .map(|p| {
                     let escaped = p.replace(char::from(39), "''");
-                    format!("persons LIKE '%\"{}\"%'", escaped)
+                    format!("persons LIKE '%\"{escaped}\"%'")
                 })
                 .collect();
             conditions.push(format!("({})", person_conditions.join(" OR ")));
@@ -302,7 +300,7 @@ impl VectorStore for SqliteVector {
 
         if let Some(ref location) = params.location {
             let escaped = location.replace(char::from(39), "''");
-            conditions.push(format!("location LIKE '%{}%'", escaped));
+            conditions.push(format!("location LIKE '%{escaped}%'"));
         }
 
         if let Some(ref entities) = params.entities
@@ -312,7 +310,7 @@ impl VectorStore for SqliteVector {
                 .iter()
                 .map(|e| {
                     let escaped = e.replace(char::from(39), "''");
-                    format!("entities LIKE '%\"{}\"%'", escaped)
+                    format!("entities LIKE '%\"{escaped}\"%'")
                 })
                 .collect();
             conditions.push(format!("({})", entity_conditions.join(" OR ")));
@@ -321,17 +319,13 @@ impl VectorStore for SqliteVector {
         if let Some(ref time_range) = params.timestamp_range {
             let start = time_range.start.to_rfc3339();
             let end = time_range.end.to_rfc3339();
-            conditions.push(format!(
-                "timestamp >= '{}' AND timestamp <= '{}'",
-                start, end
-            ));
+            conditions.push(format!("timestamp >= '{start}' AND timestamp <= '{end}'"));
         }
 
         let where_clause = conditions.join(" AND ");
 
         let query = format!(
-            "SELECT id, lossless_restatement, keywords, persons, entities, location, topic, timestamp FROM {} WHERE {} LIMIT ?",
-            META_TABLE, where_clause
+            "SELECT id, lossless_restatement, keywords, persons, entities, location, topic, timestamp FROM {META_TABLE} WHERE {where_clause} LIMIT ?"
         );
 
         let mut stmt = conn
@@ -353,7 +347,7 @@ impl VectorStore for SqliteVector {
 
         let rowid: Option<i64> = conn
             .query_row(
-                &format!("SELECT rowid FROM {} WHERE id = ?1", META_TABLE),
+                &format!("SELECT rowid FROM {META_TABLE} WHERE id = ?1"),
                 rusqlite::params![entry_id.to_string()],
                 |row| row.get(0),
             )
@@ -365,13 +359,13 @@ impl VectorStore for SqliteVector {
         };
 
         conn.execute(
-            &format!("DELETE FROM {} WHERE id = ?1", META_TABLE),
+            &format!("DELETE FROM {META_TABLE} WHERE id = ?1"),
             rusqlite::params![entry_id.to_string()],
         )
         .map_err(|e| VectorError::DeletionFailed(e.to_string()))?;
 
         conn.execute(
-            &format!("DELETE FROM {} WHERE rowid = ?1", TABLE_NAME),
+            &format!("DELETE FROM {TABLE_NAME} WHERE rowid = ?1"),
             rusqlite::params![rowid],
         )
         .map_err(|e| VectorError::DeletionFailed(e.to_string()))?;
@@ -383,7 +377,7 @@ impl VectorStore for SqliteVector {
         let conn = self.conn.lock().await;
 
         let count: i64 = conn
-            .query_row(&format!("SELECT COUNT(*) FROM {}", META_TABLE), [], |row| {
+            .query_row(&format!("SELECT COUNT(*) FROM {META_TABLE}"), [], |row| {
                 row.get(0)
             })
             .map_err(|e| VectorError::SearchFailed(e.to_string()))?;
@@ -396,8 +390,7 @@ impl VectorStore for SqliteVector {
 
         let mut stmt = conn
             .prepare(&format!(
-                "SELECT id, lossless_restatement, keywords, persons, entities, location, topic, timestamp FROM {}",
-                META_TABLE
+                "SELECT id, lossless_restatement, keywords, persons, entities, location, topic, timestamp FROM {META_TABLE}"
             ))
             .map_err(|e| VectorError::SearchFailed(e.to_string()))?;
 
@@ -502,7 +495,7 @@ mod tests {
     async fn test_semantic_search_respects_top_k() {
         let store = SqliteVector::in_memory(64).unwrap();
         let entries: Vec<MemoryEntry> = (0..10)
-            .map(|i| make_entry(&format!("Memory {}", i)))
+            .map(|i| make_entry(&format!("Memory {i}")))
             .collect();
         let vectors: Vec<Vec<f32>> = (0..10).map(|_| make_vector(64)).collect();
 

@@ -97,12 +97,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     println!("5. Searching memories...");
     let results = chimpoe.search("programming preferences", Some(3)).await?;
-    println!("{}\n", results);
+    println!("{results}\n");
 
     println!("6. Asking a question...");
     match chimpoe.ask("What do you know about my work?").await {
-        Ok(answer) => println!("   Answer: {}\n", answer),
-        Err(e) => println!("   Failed: {}\n", e),
+        Ok(answer) => println!("   Answer: {answer}\n"),
+        Err(e) => println!("   Failed: {e}\n"),
     }
 
     println!("7. Stats:");

@@ -35,16 +35,16 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     println!("3. Finalizing (process remaining buffer)...");
     match chimpoe.finalize().await {
-        Ok(count) => println!("   Extracted {} memories\n", count),
+        Ok(count) => println!("   Extracted {count} memories\n"),
         Err(e) => {
-            println!("   Failed: {}", e);
+            println!("   Failed: {e}");
             return Ok(());
         }
     }
 
     println!("4. Searching memories...");
     let results = chimpoe.search("meeting at Starbucks", Some(3)).await?;
-    println!("{}\n", results);
+    println!("{results}\n");
 
     println!("5. Stats:");
     println!("   Memories stored: {}", chimpoe.memory_count().await);

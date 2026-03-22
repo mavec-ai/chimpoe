@@ -8,7 +8,8 @@ pub struct Synthesizer {
 }
 
 impl Synthesizer {
-    pub fn new(config: PipelineConfig) -> Self {
+    #[must_use]
+    pub const fn new(config: PipelineConfig) -> Self {
         Self { config }
     }
 
@@ -17,20 +18,19 @@ impl Synthesizer {
             return Ok(Vec::new());
         }
 
-        let deduped = self.deduplicate_entries(entries);
+        let deduped = Self::deduplicate_entries(entries);
         let merged = self.merge_similar_entries(deduped);
 
         Ok(merged)
     }
 
-    fn deduplicate_entries(&self, entries: Vec<MemoryEntry>) -> Vec<MemoryEntry> {
+    fn deduplicate_entries(entries: Vec<MemoryEntry>) -> Vec<MemoryEntry> {
         let mut seen: HashSet<String> = HashSet::new();
         let mut unique: Vec<MemoryEntry> = Vec::new();
 
         for entry in entries {
             let key = entry.lossless_restatement.to_lowercase();
-            if !seen.contains(&key) {
-                seen.insert(key);
+            if seen.insert(key) {
                 unique.push(entry);
             }
         }
@@ -75,17 +75,17 @@ impl Synthesizer {
     }
 
     fn are_similar(&self, a: &MemoryEntry, b: &MemoryEntry) -> bool {
-        let jaccard = self.jaccard_similarity(&a.keywords, &b.keywords);
+        let jaccard = Self::jaccard_similarity(&a.keywords, &b.keywords);
         jaccard >= self.config.similarity_threshold
     }
 
-    fn jaccard_similarity(&self, a: &[String], b: &[String]) -> f32 {
+    fn jaccard_similarity(a: &[String], b: &[String]) -> f32 {
         if a.is_empty() || b.is_empty() {
             return 0.0;
         }
 
-        let set_a: HashSet<&str> = a.iter().map(|s| s.as_str()).collect();
-        let set_b: HashSet<&str> = b.iter().map(|s| s.as_str()).collect();
+        let set_a: HashSet<&str> = a.iter().map(std::string::String::as_str).collect();
+        let set_b: HashSet<&str> = b.iter().map(std::string::String::as_str).collect();
 
         let intersection = set_a.intersection(&set_b).count();
         let union = set_a.union(&set_b).count();
@@ -179,7 +179,7 @@ mod tests {
     fn test_synthesize_single_entry() {
         let synth = Synthesizer::new(test_config());
         let entry = make_entry("User likes pizza", vec!["pizza", "food"]);
-        let result = synth.synthesize(vec![entry.clone()]).unwrap();
+        let result = synth.synthesize(vec![entry]).unwrap();
         assert_eq!(result.len(), 1);
         assert_eq!(result[0].lossless_restatement, "User likes pizza");
     }
@@ -284,44 +284,43 @@ mod tests {
 
     #[test]
     fn test_jaccard_similarity_identical_sets() {
-        let synth = Synthesizer::new(test_config());
+        let _synth = Synthesizer::new(test_config());
         let a = vec!["a".to_string(), "b".to_string(), "c".to_string()];
         let b = vec!["a".to_string(), "b".to_string(), "c".to_string()];
 
-        let sim = synth.jaccard_similarity(&a, &b);
+        let sim = Synthesizer::jaccard_similarity(&a, &b);
         assert!((sim - 1.0).abs() < f32::EPSILON);
     }
 
     #[test]
     fn test_jaccard_similarity_no_overlap() {
-        let synth = Synthesizer::new(test_config());
+        let _synth = Synthesizer::new(test_config());
         let a = vec!["a".to_string(), "b".to_string()];
         let b = vec!["c".to_string(), "d".to_string()];
 
-        let sim = synth.jaccard_similarity(&a, &b);
+        let sim = Synthesizer::jaccard_similarity(&a, &b);
         assert!((sim - 0.0).abs() < f32::EPSILON);
     }
 
     #[test]
     fn test_jaccard_similarity_half_overlap() {
-        let synth = Synthesizer::new(test_config());
+        let _synth = Synthesizer::new(test_config());
         let a = vec!["a".to_string(), "b".to_string()];
         let b = vec!["b".to_string(), "c".to_string()];
 
-        let sim = synth.jaccard_similarity(&a, &b);
-        assert!((sim - 0.3333333).abs() < 0.001);
+        let sim = Synthesizer::jaccard_similarity(&a, &b);
+        assert!((sim - 0.333_333_3).abs() < 0.001);
     }
 
     #[test]
     fn test_jaccard_similarity_empty_sets() {
-        let synth = Synthesizer::new(test_config());
         let a: Vec<String> = Vec::new();
         let b = vec!["a".to_string()];
 
-        let sim = synth.jaccard_similarity(&a, &b);
+        let sim = Synthesizer::jaccard_similarity(&a, &b);
         assert!((sim - 0.0).abs() < f32::EPSILON);
 
-        let sim = synth.jaccard_similarity(&b, &a);
+        let sim = Synthesizer::jaccard_similarity(&b, &a);
         assert!((sim - 0.0).abs() < f32::EPSILON);
     }
 }

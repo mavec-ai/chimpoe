@@ -12,7 +12,7 @@ pub fn create_embedder(config: &CliConfig) -> Result<Arc<dyn Embedder>> {
     let provider = match config.embedder.provider.as_str() {
         "ollama" => Provider::Ollama,
         "openai" => Provider::OpenAI,
-        p => return Err(anyhow!("Unknown embedder provider: {}", p)),
+        p => return Err(anyhow!("Unknown embedder provider: {p}")),
     };
 
     let embedder_config = EmbeddingConfig {
@@ -33,7 +33,7 @@ pub fn create_llm(config: &CliConfig) -> Result<Arc<dyn LlmClient>> {
     let provider = match config.llm.provider.as_str() {
         "ollama" => Provider::Ollama,
         "openai" => Provider::OpenAI,
-        p => return Err(anyhow!("Unknown LLM provider: {}", p)),
+        p => return Err(anyhow!("Unknown LLM provider: {p}")),
     };
 
     let llm_config = LlmConfig {

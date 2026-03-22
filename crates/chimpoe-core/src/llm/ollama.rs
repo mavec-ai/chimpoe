@@ -43,6 +43,7 @@ struct ResponseMessage {
 }
 
 impl OllamaLlm {
+    #[must_use]
     pub fn new(config: &LlmConfig) -> Self {
         Self {
             client: Client::new(),
@@ -54,17 +55,19 @@ impl OllamaLlm {
         }
     }
 
+    #[must_use]
     pub fn with_base_url(mut self, base_url: String) -> Self {
         self.base_url = base_url;
         self
     }
 
+    #[must_use]
     pub fn with_model(mut self, model: String) -> Self {
         self.model = model;
         self
     }
 
-    fn convert_messages(&self, messages: &[Message]) -> Vec<ChatMessage> {
+    fn convert_messages(messages: &[Message]) -> Vec<ChatMessage> {
         messages
             .iter()
             .map(|m| ChatMessage {
@@ -78,7 +81,7 @@ impl OllamaLlm {
             .collect()
     }
 
-    fn extract_json(&self, text: &str) -> LlmResult<serde_json::Value> {
+    fn extract_json(text: &str) -> LlmResult<serde_json::Value> {
         let text = text.trim();
 
         let extract_and_parse = |json_str: &str| -> LlmResult<serde_json::Value> {
@@ -119,7 +122,7 @@ impl LlmClient for OllamaLlm {
     async fn chat_completion(&self, messages: &[Message], temperature: f32) -> LlmResult<String> {
         let request = ChatRequest {
             model: self.model.clone(),
-            messages: self.convert_messages(messages),
+            messages: Self::convert_messages(messages),
             stream: false,
             temperature,
             format: Some(serde_json::json!("json")),
@@ -137,7 +140,7 @@ impl LlmClient for OllamaLlm {
         if !response.status().is_success() {
             let status = response.status();
             let body = response.text().await.unwrap_or_default();
-            return Err(LlmError::ApiError(format!("HTTP {}: {}", status, body)));
+            return Err(LlmError::ApiError(format!("HTTP {status}: {body}")));
         }
 
         let chat_response: ChatResponse = response
@@ -159,7 +162,7 @@ impl LlmClient for OllamaLlm {
     ) -> LlmResult<serde_json::Value> {
         let request = ChatRequest {
             model: self.model.clone(),
-            messages: self.convert_messages(messages),
+            messages: Self::convert_messages(messages),
             stream: false,
             temperature,
             format: Some(serde_json::json!({"type": "object"})),
@@ -177,7 +180,7 @@ impl LlmClient for OllamaLlm {
         if !response.status().is_success() {
             let status = response.status();
             let body = response.text().await.unwrap_or_default();
-            return Err(LlmError::ApiError(format!("HTTP {}: {}", status, body)));
+            return Err(LlmError::ApiError(format!("HTTP {status}: {body}")));
         }
 
         let chat_response: ChatResponse = response
@@ -191,6 +194,6 @@ impl LlmClient for OllamaLlm {
             .map(|c| c.message.content.clone())
             .ok_or_else(|| LlmError::InvalidResponse("No choices in response".to_string()))?;
 
-        self.extract_json(&content)
+        Self::extract_json(&content)
     }
 }

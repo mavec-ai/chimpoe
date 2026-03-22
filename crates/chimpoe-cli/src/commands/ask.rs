@@ -13,7 +13,7 @@ pub struct AskArgs {
 }
 
 pub async fn run(args: AskArgs, config: &CliConfig) -> Result<()> {
-    config.ensure_directories()?;
+    crate::config::ensure_directories()?;
 
     let vector_store = Arc::new(SqliteVector::new(
         &config.storage.path.to_string_lossy(),
@@ -48,7 +48,7 @@ pub async fn run(args: AskArgs, config: &CliConfig) -> Result<()> {
 
     let answer = chimpoe.ask(&args.question).await?;
 
-    println!("{}\n", answer);
+    println!("{answer}\n");
 
     Ok(())
 }

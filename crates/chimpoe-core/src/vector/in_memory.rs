@@ -15,6 +15,7 @@ pub struct InMemoryVector {
 }
 
 impl InMemoryVector {
+    #[must_use]
     pub fn new() -> Self {
         Self {
             data: Arc::new(RwLock::new(HashMap::new())),
@@ -125,8 +126,7 @@ impl VectorStore for InMemoryVector {
                     let matches = entry
                         .location
                         .as_ref()
-                        .map(|el| el.to_lowercase().contains(&location.to_lowercase()))
-                        .unwrap_or(false);
+                        .is_some_and(|el| el.to_lowercase().contains(&location.to_lowercase()));
                     if !matches {
                         return None;
                     }

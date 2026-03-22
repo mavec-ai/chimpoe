@@ -56,6 +56,7 @@ struct OpenAIError {
 }
 
 impl OpenAILlm {
+    #[must_use]
     pub fn new(config: &LlmConfig) -> Self {
         Self {
             client: Client::new(),
@@ -68,22 +69,25 @@ impl OpenAILlm {
         }
     }
 
+    #[must_use]
     pub fn with_api_key(mut self, api_key: String) -> Self {
         self.api_key = api_key;
         self
     }
 
+    #[must_use]
     pub fn with_base_url(mut self, base_url: String) -> Self {
         self.base_url = base_url;
         self
     }
 
+    #[must_use]
     pub fn with_model(mut self, model: String) -> Self {
         self.model = model;
         self
     }
 
-    fn convert_messages(&self, messages: &[Message]) -> Vec<ChatMessage> {
+    fn convert_messages(messages: &[Message]) -> Vec<ChatMessage> {
         messages
             .iter()
             .map(|m| ChatMessage {
@@ -97,7 +101,7 @@ impl OpenAILlm {
             .collect()
     }
 
-    fn extract_json(&self, text: &str) -> LlmResult<serde_json::Value> {
+    fn extract_json(text: &str) -> LlmResult<serde_json::Value> {
         let text = text.trim();
 
         let extract_and_parse = |json_str: &str| -> LlmResult<serde_json::Value> {
@@ -138,7 +142,7 @@ impl LlmClient for OpenAILlm {
     async fn chat_completion(&self, messages: &[Message], temperature: f32) -> LlmResult<String> {
         let request = ChatRequest {
             model: self.model.clone(),
-            messages: self.convert_messages(messages),
+            messages: Self::convert_messages(messages),
             stream: false,
             temperature,
             response_format: None,
@@ -169,7 +173,7 @@ impl LlmClient for OpenAILlm {
                 }
                 return Err(LlmError::ApiError(error.message));
             }
-            return Err(LlmError::ApiError(format!("HTTP {}: {}", status, body)));
+            return Err(LlmError::ApiError(format!("HTTP {status}: {body}")));
         }
 
         let chat_response: ChatResponse =
@@ -189,7 +193,7 @@ impl LlmClient for OpenAILlm {
     ) -> LlmResult<serde_json::Value> {
         let request = ChatRequest {
             model: self.model.clone(),
-            messages: self.convert_messages(messages),
+            messages: Self::convert_messages(messages),
             stream: false,
             temperature,
             response_format: Some(serde_json::json!({"type": "json_object"})),
@@ -220,7 +224,7 @@ impl LlmClient for OpenAILlm {
                 }
                 return Err(LlmError::ApiError(error.message));
             }
-            return Err(LlmError::ApiError(format!("HTTP {}: {}", status, body)));
+            return Err(LlmError::ApiError(format!("HTTP {status}: {body}")));
         }
 
         let chat_response: ChatResponse =
@@ -232,6 +236,6 @@ impl LlmClient for OpenAILlm {
             .map(|c| c.message.content.clone())
             .ok_or_else(|| LlmError::InvalidResponse("No choices in response".to_string()))?;
 
-        self.extract_json(&content)
+        Self::extract_json(&content)
     }
 }
