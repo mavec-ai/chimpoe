@@ -13,7 +13,10 @@ mod chimpoe;
 #[cfg(test)]
 mod mocks;
 
-pub use config::{Config, EmbeddingConfig, LlmConfig, PipelineConfig, Provider, RetrievalConfig};
+pub use config::{
+    Config, EmbeddingConfig, LlmConfig, PipelineConfig, Provider, RetrievalConfig,
+    SynthesizerConfig,
+};
 pub use error::{ChimpoeError, Result};
 pub use traits::{Embedder, LlmClient, Message, MessageRole, VectorStore};
 pub use types::{Dialogue, MemoryEntry};

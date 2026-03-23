@@ -1,7 +1,8 @@
 use anyhow::{Context, Result};
 use chimpoe::config::{
-    DEFAULT_KEYWORD_TOP_K, DEFAULT_SEMANTIC_TOP_K, DEFAULT_STRUCTURED_TOP_K, DEFAULT_WINDOW_SIZE,
-    OLLAMA_EMBEDDER_BASE_URL, OLLAMA_EMBEDDER_MODEL, OLLAMA_LLM_BASE_URL, OLLAMA_LLM_MODEL,
+    DEFAULT_DEDUP_THRESHOLD, DEFAULT_KEYWORD_TOP_K, DEFAULT_SEMANTIC_TOP_K,
+    DEFAULT_STRUCTURED_TOP_K, DEFAULT_WINDOW_SIZE, OLLAMA_EMBEDDER_BASE_URL, OLLAMA_EMBEDDER_MODEL,
+    OLLAMA_LLM_BASE_URL, OLLAMA_LLM_MODEL,
 };
 use serde::{Deserialize, Serialize};
 use std::fs;
@@ -150,6 +151,8 @@ pub struct MemoryConfig {
     pub keyword_top_k: usize,
     #[serde(default = "default_structured_top_k")]
     pub structured_top_k: usize,
+    #[serde(default = "default_dedup_threshold")]
+    pub dedup_threshold: f32,
 }
 
 impl Default for MemoryConfig {
@@ -159,6 +162,7 @@ impl Default for MemoryConfig {
             semantic_top_k: default_semantic_top_k(),
             keyword_top_k: default_keyword_top_k(),
             structured_top_k: default_structured_top_k(),
+            dedup_threshold: default_dedup_threshold(),
         }
     }
 }
@@ -177,6 +181,10 @@ const fn default_keyword_top_k() -> usize {
 
 const fn default_structured_top_k() -> usize {
     DEFAULT_STRUCTURED_TOP_K
+}
+
+const fn default_dedup_threshold() -> f32 {
+    DEFAULT_DEDUP_THRESHOLD
 }
 
 impl CliConfig {

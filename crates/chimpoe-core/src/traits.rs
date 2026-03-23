@@ -57,4 +57,5 @@ pub trait VectorStore: Send + Sync {
     async fn delete_entry(&self, entry_id: &uuid::Uuid) -> VectorResult<bool>;
     async fn count(&self) -> VectorResult<usize>;
     async fn get_all_entries(&self) -> VectorResult<Vec<MemoryEntry>>;
+    async fn get_all_entries_with_vectors(&self) -> VectorResult<Vec<(MemoryEntry, Vec<f32>)>>;
 }

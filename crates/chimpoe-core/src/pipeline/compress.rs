@@ -36,6 +36,12 @@ Your task is to extract structured memory entries from the following dialogues.
    - entities: ONLY clear named entities (Google, iPhone). SKIP generic terms.
    - topic: Brief topic/category of this information (e.g., "Meeting arrangement", "Travel plan")
    - If unclear or vague → leave empty, do NOT guess.
+8. **Direct Factual Statement (CRITICAL)**: Write lossless_restatement as DIRECT facts, NOT reported speech.
+   - WRONG: "User stated that user likes programming" (reported speech)
+   - WRONG: "User mentioned that they work at Google" (reported speech)
+   - RIGHT: "User likes programming" (direct statement)
+   - RIGHT: "User works at Google" (direct statement)
+   - Always use simple Subject-Verb-Object structure.
 
 [Output Format]
 Return a JSON object with a "memories" array:
@@ -274,6 +280,7 @@ impl Compressor {
 mod tests {
     use super::*;
     use crate::config::RetrievalConfig;
+    use crate::config::SynthesizerConfig;
     use crate::mocks::MockLlmClient;
     use std::sync::Arc;
 
@@ -281,8 +288,8 @@ mod tests {
         PipelineConfig {
             window_size: 4,
             overlap_size: 1,
-            similarity_threshold: 0.5,
             retrieval: RetrievalConfig::default(),
+            synthesizer: SynthesizerConfig::default(),
         }
     }
 

@@ -175,6 +175,14 @@ impl VectorStore for InMemoryVector {
         let data = self.data.read().await;
         Ok(data.values().map(|(entry, _)| entry.clone()).collect())
     }
+
+    async fn get_all_entries_with_vectors(&self) -> VectorResult<Vec<(MemoryEntry, Vec<f32>)>> {
+        let data = self.data.read().await;
+        Ok(data
+            .values()
+            .map(|(entry, vec)| (entry.clone(), vec.clone()))
+            .collect())
+    }
 }
 
 fn cosine_similarity(a: &[f32], b: &[f32]) -> f32 {

@@ -37,6 +37,10 @@ pub async fn run(_args: FinalizeArgs, config: &CliConfig) -> Result<()> {
 
     let pipeline_config = chimpoe::config::PipelineConfig {
         window_size: config.memory.window_size,
+        synthesizer: chimpoe::SynthesizerConfig {
+            dedup_threshold: config.memory.dedup_threshold,
+            ..Default::default()
+        },
         ..Default::default()
     };
 

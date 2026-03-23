@@ -14,6 +14,10 @@ pub const DEFAULT_SEMANTIC_TOP_K: usize = 5;
 pub const DEFAULT_KEYWORD_TOP_K: usize = 3;
 pub const DEFAULT_STRUCTURED_TOP_K: usize = 5;
 
+pub const DEFAULT_KEYWORD_WEIGHT: f32 = 0.2;
+pub const DEFAULT_SEMANTIC_WEIGHT: f32 = 0.8;
+pub const DEFAULT_DEDUP_THRESHOLD: f32 = 0.5;
+
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Default)]
 #[serde(rename_all = "lowercase")]
 pub enum Provider {
@@ -33,8 +37,8 @@ pub struct Config {
 pub struct PipelineConfig {
     pub window_size: usize,
     pub overlap_size: usize,
-    pub similarity_threshold: f32,
     pub retrieval: RetrievalConfig,
+    pub synthesizer: SynthesizerConfig,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -54,13 +58,30 @@ impl Default for RetrievalConfig {
     }
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SynthesizerConfig {
+    pub keyword_weight: f32,
+    pub semantic_weight: f32,
+    pub dedup_threshold: f32,
+}
+
+impl Default for SynthesizerConfig {
+    fn default() -> Self {
+        Self {
+            keyword_weight: DEFAULT_KEYWORD_WEIGHT,
+            semantic_weight: DEFAULT_SEMANTIC_WEIGHT,
+            dedup_threshold: DEFAULT_DEDUP_THRESHOLD,
+        }
+    }
+}
+
 impl Default for PipelineConfig {
     fn default() -> Self {
         Self {
             window_size: DEFAULT_WINDOW_SIZE,
             overlap_size: 2,
-            similarity_threshold: 0.5,
             retrieval: RetrievalConfig::default(),
+            synthesizer: SynthesizerConfig::default(),
         }
     }
 }

@@ -1,6 +1,6 @@
 use chimpoe::{
     Chimpoe, Config, EmbeddingConfig, LlmConfig, OpenAIEmbedder, OpenAILlm, PipelineConfig,
-    Provider, RetrievalConfig, SqliteVector,
+    Provider, RetrievalConfig, SqliteVector, SynthesizerConfig,
 };
 use std::sync::Arc;
 
@@ -18,12 +18,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         pipeline: PipelineConfig {
             window_size: 5,
             overlap_size: 1,
-            similarity_threshold: 0.6,
             retrieval: RetrievalConfig {
                 semantic_top_k: 10,
                 keyword_top_k: 5,
                 structured_top_k: 8,
             },
+            synthesizer: SynthesizerConfig::default(),
         },
         llm: LlmConfig {
             provider: Provider::OpenAI,

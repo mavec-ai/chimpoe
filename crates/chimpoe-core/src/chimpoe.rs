@@ -140,8 +140,17 @@ impl Chimpoe {
         let mut new_memories = compressor.compress_dialogues(&self.dialogues).await?;
 
         if !new_memories.is_empty() {
-            let synthesizer = Synthesizer::new(self.config.pipeline.clone());
-            new_memories = synthesizer.synthesize(new_memories)?;
+            let synthesizer = Synthesizer::new()
+                .with_embedder(self.embedder.clone())
+                .with_config(self.config.pipeline.synthesizer.clone());
+            new_memories = synthesizer.synthesize(new_memories).await?;
+
+            let existing_with_vectors = self.vector_store.get_all_entries_with_vectors().await?;
+            if !existing_with_vectors.is_empty() {
+                new_memories = synthesizer
+                    .filter_against_existing(new_memories, &existing_with_vectors)
+                    .await?;
+            }
         }
 
         let count = new_memories.len();

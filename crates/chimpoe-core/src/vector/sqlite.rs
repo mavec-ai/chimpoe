@@ -25,6 +25,24 @@ fn vec_to_bytes(v: &[f32]) -> Vec<u8> {
     bytes
 }
 
+fn bytes_to_vec(bytes: &[u8], dimension: usize) -> Vec<f32> {
+    (0..dimension)
+        .map(|i| {
+            let start = i * 4;
+            if start + 4 <= bytes.len() {
+                f32::from_le_bytes([
+                    bytes[start],
+                    bytes[start + 1],
+                    bytes[start + 2],
+                    bytes[start + 3],
+                ])
+            } else {
+                0.0
+            }
+        })
+        .collect()
+}
+
 impl SqliteVector {
     pub fn new(db_path: &str, dimension: usize) -> VectorResult<Self> {
         unsafe {
@@ -396,6 +414,35 @@ impl VectorStore for SqliteVector {
 
         let rows: Vec<std::result::Result<MemoryEntry, rusqlite::Error>> = stmt
             .query_map([], Self::parse_entry_from_row)
+            .map_err(|e| VectorError::SearchFailed(e.to_string()))?
+            .collect();
+
+        rows.into_iter()
+            .map(|r| r.map_err(|e| VectorError::SearchFailed(e.to_string())))
+            .collect()
+    }
+
+    async fn get_all_entries_with_vectors(&self) -> VectorResult<Vec<(MemoryEntry, Vec<f32>)>> {
+        let conn = self.conn.lock().await;
+
+        let mut stmt = conn
+            .prepare(&format!(
+                r"
+                SELECT m.id, m.lossless_restatement, m.keywords, m.persons, m.entities,
+                       m.location, m.topic, m.timestamp, v.embedding
+                FROM {META_TABLE} m
+                JOIN {TABLE_NAME} v ON m.rowid = v.rowid
+                "
+            ))
+            .map_err(|e| VectorError::SearchFailed(e.to_string()))?;
+
+        let rows: Vec<std::result::Result<(MemoryEntry, Vec<f32>), rusqlite::Error>> = stmt
+            .query_map([], |row| {
+                let entry = Self::parse_entry_from_row(row)?;
+                let embedding_bytes: Vec<u8> = row.get(8)?;
+                let vector = bytes_to_vec(&embedding_bytes, self.dimension);
+                Ok((entry, vector))
+            })
             .map_err(|e| VectorError::SearchFailed(e.to_string()))?
             .collect();
 

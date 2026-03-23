@@ -180,4 +180,14 @@ impl VectorStore for MockVectorStore {
             .map(|(e, _)| e.clone())
             .collect())
     }
+
+    async fn get_all_entries_with_vectors(&self) -> VectorResult<Vec<(MemoryEntry, Vec<f32>)>> {
+        Ok(self
+            .entries
+            .lock()
+            .unwrap()
+            .iter()
+            .map(|(e, v)| (e.clone(), v.clone()))
+            .collect())
+    }
 }
