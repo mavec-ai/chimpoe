@@ -7,7 +7,9 @@ use std::sync::Arc;
 
 const DEFAULT_TEMPERATURE: f32 = 0.1;
 const RRF_K: f32 = 60.0;
-const QUERY_ANALYSIS_PROMPT: &str = r#"Analyze the following query and extract key information:
+const QUERY_ANALYSIS_PROMPT: &str = r#"Analyze the following query and extract key information.
+
+Current date: {current_date}
 
 Query: {query}
 
@@ -16,7 +18,14 @@ Please extract:
 2. persons: Person names mentioned
 3. entities: Entities (companies, products, organizations, etc.)
 4. location: Location mentioned (if any)
-5. time_expression: Time expression (if any, e.g., "last week", "yesterday", "January 15", "2 days ago")
+5. time_expression: Time expression in original language (preserve as-is)
+6. resolved_date: Convert the time expression to ISO date format (YYYY-MM-DD) based on Current Date.
+   Handle ANY language - use the same logic for all:
+   - yesterday / kemarin / hier / 昨日 / أيام → Current Date - 1 day
+   - tomorrow / besok / demain / 明日 → Current Date + 1 day
+   - last week / minggu lalu / 先週 → Current Date - 7 days
+   - "January 15" or similar absolute dates → use as-is (current year if not specified)
+   - If no time reference, use null
 
 Return in JSON format:
 {{
@@ -24,7 +33,8 @@ Return in JSON format:
   "persons": ["name1", "name2"],
   "entities": ["entity1"],
   "location": "location or null",
-  "time_expression": "time expression or null"
+  "time_expression": "original time expression or null",
+  "resolved_date": "YYYY-MM-DD or null"
 }}
 
 Return ONLY JSON, no other content."#;
@@ -56,7 +66,11 @@ impl HybridRetriever {
     }
 
     pub async fn analyze_query(&self, query: &str) -> Option<QueryAnalysis> {
-        let prompt = QUERY_ANALYSIS_PROMPT.replace("{query}", query);
+        let now = chrono::Local::now();
+        let current_date = now.format("%Y-%m-%d").to_string();
+        let prompt = QUERY_ANALYSIS_PROMPT
+            .replace("{current_date}", &current_date)
+            .replace("{query}", query);
 
         let messages = vec![
             Message {
@@ -563,6 +577,7 @@ mod tests {
             entities: vec![],
             location: None,
             time_expression: None,
+            resolved_date: None,
         };
 
         let params = StructuredSearchParams::from(analysis);
@@ -579,6 +594,7 @@ mod tests {
             entities: vec![],
             location: Some("Jakarta".to_string()),
             time_expression: None,
+            resolved_date: None,
         };
 
         let params = StructuredSearchParams::from(analysis);
@@ -593,6 +609,7 @@ mod tests {
             entities: vec!["Google".to_string()],
             location: None,
             time_expression: None,
+            resolved_date: None,
         };
 
         let params = StructuredSearchParams::from(analysis);

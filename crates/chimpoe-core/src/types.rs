@@ -112,6 +112,19 @@ pub struct TimeRange {
 
 impl TimeRange {
     #[must_use]
+    pub fn from_iso_date(date_str: &str) -> Option<Self> {
+        let naive_date = chrono::NaiveDate::parse_from_str(date_str, "%Y-%m-%d").ok()?;
+        let start = naive_date
+            .and_time(NaiveTime::from_hms_opt(0, 0, 0)?)
+            .and_utc();
+        let end = naive_date
+            .and_time(NaiveTime::from_hms_opt(23, 59, 59)?)
+            .and_utc();
+
+        Some(Self { start, end })
+    }
+
+    #[must_use]
     pub fn parse(expression: &str) -> Option<Self> {
         let base_time = Utc::now();
         let lower = expression.to_lowercase();
@@ -168,14 +181,16 @@ pub struct QueryAnalysis {
     pub location: Option<String>,
     #[serde(default)]
     pub time_expression: Option<String>,
+    #[serde(default)]
+    pub resolved_date: Option<String>,
 }
 
 impl From<QueryAnalysis> for StructuredSearchParams {
     fn from(analysis: QueryAnalysis) -> Self {
         let timestamp_range = analysis
-            .time_expression
+            .resolved_date
             .as_ref()
-            .and_then(|expr| TimeRange::parse(expr));
+            .and_then(|date_str| TimeRange::from_iso_date(date_str));
 
         Self {
             persons: if analysis.persons.is_empty() {
@@ -234,6 +249,7 @@ mod tests {
             entities: Vec::new(),
             location: None,
             time_expression: Some("yesterday".to_string()),
+            resolved_date: Some("2025-03-22".to_string()),
         };
 
         let params: StructuredSearchParams = analysis.into();
@@ -249,6 +265,7 @@ mod tests {
             entities: Vec::new(),
             location: None,
             time_expression: None,
+            resolved_date: None,
         };
 
         let params: StructuredSearchParams = analysis.into();

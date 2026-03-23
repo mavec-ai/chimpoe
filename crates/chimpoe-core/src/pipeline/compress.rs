@@ -7,6 +7,8 @@ use std::sync::Arc;
 const EXTRACTION_PROMPT: &str = r#"
 Your task is to extract structured memory entries from the following dialogues.
 
+Current Date: {current_date}
+
 {previous_context}
 
 [Current Window Dialogues]
@@ -28,7 +30,17 @@ Your task is to extract structured memory entries from the following dialogues.
    - When in doubt, omit
 4. **Lossless Information**: Each lossless_restatement must be complete, independent, and understandable without context
 5. **Force Disambiguation**: NO pronouns (he, she, it, they, this, that). Use actual names.
-6. **Time Reference**: Preserve time expressions AS-IS from original. Do NOT resolve relative time.
+6. **Temporal Anchoring (CRITICAL)**:
+   - Convert ALL relative time expressions to absolute ISO 8601 format
+   - Use Current Date as reference point for calculation
+   - Examples (apply same logic to ANY language):
+     * "yesterday" / "kemarin" / "昨日" / "أمس" → Current Date - 1 day
+     * "tomorrow" / "besok" / "明日" → Current Date + 1 day
+     * "last week" / "minggu lalu" / "先週" → Current Date - 7 days
+     * "2 days ago" / "2 hari lalu" → Current Date - 2 days
+   - Include the resolved absolute timestamp in the "timestamp" field
+   - In lossless_restatement, use absolute dates instead of relative expressions
+   - Example: "User bought laptop yesterday" → "User bought laptop on 2026-03-22"
 7. **Precise Metadata**:
    - keywords: Core keywords (names, places, entities, topic words)
    - persons: ONLY proper names (Alice, Bob). SKIP pronouns.
@@ -50,18 +62,21 @@ Return a JSON object with a "memories" array:
 {{
   "memories": [
     {{
-      "lossless_restatement": "Complete unambiguous restatement in the SAME LANGUAGE as dialogue",
+      "lossless_restatement": "Complete unambiguous restatement with ABSOLUTE dates in the SAME LANGUAGE as dialogue",
       "keywords": ["keyword1", "keyword2"],
       "persons": ["name1", "name2"],
       "entities": ["entity1", "entity2"],
       "location": "location name or null",
-      "topic": "topic phrase"
+      "topic": "topic phrase",
+      "timestamp": "YYYY-MM-DDTHH:MM:SS or null"
     }}
   ]
 }}
 ```
 
 [Example - FOR FORMAT REFERENCE ONLY, DO NOT COPY THE CONTENT]
+Current Date: 2025-11-15
+
 Dialogues:
 [2025-11-15T14:30:00] Alice: Bob, let's meet at Starbucks tomorrow at 2pm to discuss the new product
 [2025-11-15T14:31:00] Bob: Okay, I'll prepare the materials
@@ -71,20 +86,22 @@ Output:
 {{
   "memories": [
     {{
-      "lossless_restatement": "Alice suggested at 2025-11-15T14:30:00 to meet with Bob at Starbucks tomorrow at 2pm to discuss the new product.",
+      "lossless_restatement": "Alice will meet Bob at Starbucks on 2025-11-16 at 2pm to discuss the new product.",
       "keywords": ["Alice", "Bob", "Starbucks", "new product", "meeting"],
       "persons": ["Alice", "Bob"],
       "entities": ["new product"],
       "location": "Starbucks",
-      "topic": "Product discussion meeting arrangement"
+      "topic": "Product discussion meeting arrangement",
+      "timestamp": "2025-11-16T14:00:00"
     }},
     {{
-      "lossless_restatement": "Bob agreed to attend the meeting and committed to prepare relevant materials.",
+      "lossless_restatement": "Bob agreed on 2025-11-15 to attend the meeting and committed to prepare relevant materials.",
       "keywords": ["Bob", "prepare materials", "agree"],
       "persons": ["Bob"],
       "entities": [],
       "location": null,
-      "topic": "Meeting preparation confirmation"
+      "topic": "Meeting preparation confirmation",
+      "timestamp": "2025-11-15T14:31:00"
     }}
   ]
 }}
@@ -94,6 +111,7 @@ IMPORTANT:
 - Process the ACTUAL dialogues in [Current Window Dialogues] above.
 - The examples show FORMAT only - do not copy their content.
 - Output in THE SAME LANGUAGE as the dialogue (Indonesian → Indonesian, English → English).
+- ALWAYS convert relative times to absolute dates using Current Date.
 
 Return ONLY valid JSON, no markdown or explanation outside the JSON structure.
 "#;
@@ -159,7 +177,9 @@ impl Compressor {
     ) -> PipelineResult<Vec<MemoryEntry>> {
         let conversation = Self::format_conversation(window);
         let previous_context = Self::format_previous_context(previous_entries);
+        let current_date = chrono::Local::now().format("%Y-%m-%d").to_string();
         let prompt = EXTRACTION_PROMPT
+            .replace("{current_date}", &current_date)
             .replace("{conversation}", &conversation)
             .replace("{previous_context}", &previous_context);
 
@@ -267,6 +287,23 @@ impl Compressor {
                 && topic != "null"
             {
                 entry.topic = Some(topic.to_string());
+            }
+
+            if let Some(ts_str) = mem.get("timestamp").and_then(|v| v.as_str())
+                && !ts_str.is_empty()
+                && ts_str != "null"
+            {
+                if let Ok(ts) = chrono::DateTime::parse_from_rfc3339(ts_str) {
+                    entry.timestamp = Some(ts.with_timezone(&chrono::Utc));
+                } else if let Ok(dt) = chrono::NaiveDateTime::parse_from_str(ts_str, "%Y-%m-%dT%H:%M:%S")
+                {
+                    entry.timestamp = Some(chrono::DateTime::from_naive_utc_and_offset(dt, chrono::Utc));
+                } else if let Ok(d) = chrono::NaiveDate::parse_from_str(ts_str, "%Y-%m-%d") {
+                    entry.timestamp = Some(chrono::DateTime::from_naive_utc_and_offset(
+                        d.and_hms_opt(0, 0, 0).unwrap(),
+                        chrono::Utc,
+                    ));
+                }
             }
 
             entries.push(entry);
