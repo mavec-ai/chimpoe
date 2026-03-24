@@ -44,6 +44,14 @@ pub enum VectorError {
     #[error("Dimension mismatch: expected {expected}, got {actual}")]
     DimensionMismatch { expected: usize, actual: usize },
 
+    #[error(
+        "Dimension mismatch on open: database has dimension {db_dimension}, but requested {requested_dimension}"
+    )]
+    DimensionMismatchOnOpen {
+        db_dimension: usize,
+        requested_dimension: usize,
+    },
+
     #[error("Table not found: {0}")]
     TableNotFound(String),
 }

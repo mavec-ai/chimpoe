@@ -295,9 +295,11 @@ impl Compressor {
             {
                 if let Ok(ts) = chrono::DateTime::parse_from_rfc3339(ts_str) {
                     entry.timestamp = Some(ts.with_timezone(&chrono::Utc));
-                } else if let Ok(dt) = chrono::NaiveDateTime::parse_from_str(ts_str, "%Y-%m-%dT%H:%M:%S")
+                } else if let Ok(dt) =
+                    chrono::NaiveDateTime::parse_from_str(ts_str, "%Y-%m-%dT%H:%M:%S")
                 {
-                    entry.timestamp = Some(chrono::DateTime::from_naive_utc_and_offset(dt, chrono::Utc));
+                    entry.timestamp =
+                        Some(chrono::DateTime::from_naive_utc_and_offset(dt, chrono::Utc));
                 } else if let Ok(d) = chrono::NaiveDate::parse_from_str(ts_str, "%Y-%m-%d") {
                     entry.timestamp = Some(chrono::DateTime::from_naive_utc_and_offset(
                         d.and_hms_opt(0, 0, 0).unwrap(),

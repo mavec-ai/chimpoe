@@ -11,6 +11,9 @@ use uuid::Uuid;
 const TABLE_NAME: &str = "memories";
 const META_TABLE: &str = "memory_metadata";
 const FTS_TABLE: &str = "memory_fts";
+const CONFIG_TABLE: &str = "config";
+
+static SQLITE_VEC_INIT: std::sync::Once = std::sync::Once::new();
 
 pub struct SqliteVector {
     conn: Arc<Mutex<Connection>>,
@@ -25,27 +28,25 @@ fn vec_to_bytes(v: &[f32]) -> Vec<u8> {
     bytes
 }
 
+fn escape_fts5_query(s: &str) -> String {
+    let escaped = s
+        .replace('"', "\"\"")
+        .replace(['*', '^'], "")
+        .replace('\'', "''");
+    format!("\"{}\"", escaped)
+}
+
 fn bytes_to_vec(bytes: &[u8], dimension: usize) -> Vec<f32> {
-    (0..dimension)
-        .map(|i| {
-            let start = i * 4;
-            if start + 4 <= bytes.len() {
-                f32::from_le_bytes([
-                    bytes[start],
-                    bytes[start + 1],
-                    bytes[start + 2],
-                    bytes[start + 3],
-                ])
-            } else {
-                0.0
-            }
-        })
+    bytes
+        .chunks_exact(4)
+        .take(dimension)
+        .map(|chunk| f32::from_le_bytes([chunk[0], chunk[1], chunk[2], chunk[3]]))
         .collect()
 }
 
 impl SqliteVector {
     pub fn new(db_path: &str, dimension: usize) -> VectorResult<Self> {
-        unsafe {
+        SQLITE_VEC_INIT.call_once(|| unsafe {
             rusqlite::ffi::sqlite3_auto_extension(Some(std::mem::transmute::<
                 *const (),
                 unsafe extern "C" fn(
@@ -56,10 +57,62 @@ impl SqliteVector {
             >(
                 sqlite3_vec_init as *const ()
             )));
-        }
+        });
 
         let conn = Connection::open(db_path)
             .map_err(|e| VectorError::ConnectionFailed(format!("Failed to open database: {e}")))?;
+
+        conn.execute_batch(
+            r"
+            PRAGMA journal_mode=WAL;
+            PRAGMA synchronous=NORMAL;
+            PRAGMA foreign_keys=ON;
+            PRAGMA busy_timeout=5000;
+            ",
+        )
+        .map_err(|e| VectorError::ConnectionFailed(format!("Failed to set PRAGMA: {e}")))?;
+
+        conn.execute_batch(&format!(
+            r#"
+            CREATE TABLE IF NOT EXISTS {CONFIG_TABLE} (
+                key TEXT PRIMARY KEY,
+                value TEXT NOT NULL
+            );
+            "#
+        ))
+        .map_err(|e| VectorError::IndexCreationFailed(e.to_string()))?;
+
+        let stored_dimension: Option<usize> = conn
+            .query_row(
+                &format!("SELECT value FROM {CONFIG_TABLE} WHERE key = 'dimension'"),
+                [],
+                |row| row.get::<_, String>(0),
+            )
+            .optional()
+            .map_err(|e| VectorError::ConnectionFailed(format!("Failed to read config: {e}")))?
+            .and_then(|s| s.parse().ok());
+
+        let dimension = match stored_dimension {
+            Some(db_dim) => {
+                if db_dim != dimension {
+                    return Err(VectorError::DimensionMismatchOnOpen {
+                        db_dimension: db_dim,
+                        requested_dimension: dimension,
+                    });
+                }
+                db_dim
+            }
+            None => {
+                conn.execute(
+                    &format!("INSERT INTO {CONFIG_TABLE} (key, value) VALUES ('dimension', ?1)"),
+                    [dimension.to_string()],
+                )
+                .map_err(|e| {
+                    VectorError::ConnectionFailed(format!("Failed to store dimension: {e}"))
+                })?;
+                dimension
+            }
+        };
 
         conn.execute_batch(&format!(
             r#"
@@ -73,6 +126,10 @@ impl SqliteVector {
                 topic TEXT,
                 timestamp TEXT
             );
+
+            CREATE INDEX IF NOT EXISTS idx_timestamp ON {META_TABLE}(timestamp);
+            CREATE INDEX IF NOT EXISTS idx_location ON {META_TABLE}(location);
+            CREATE INDEX IF NOT EXISTS idx_topic ON {META_TABLE}(topic);
 
             CREATE VIRTUAL TABLE IF NOT EXISTS {TABLE_NAME} USING vec0(
                 embedding float[{dimension}]
@@ -117,35 +174,27 @@ impl SqliteVector {
     }
 
     fn parse_entry_from_row(row: &rusqlite::Row) -> Result<MemoryEntry, rusqlite::Error> {
-        let id_str: String = row.get(0)?;
+        let id_str: String = row.get("id")?;
         let entry_id = Uuid::parse_str(&id_str).map_err(|_| rusqlite::Error::InvalidQuery)?;
 
-        let keywords_str: String = row.get(2)?;
-        let persons_str: String = row.get(3)?;
-        let entities_str: String = row.get(4)?;
-        let timestamp_str: String = row.get(7)?;
+        let keywords_str: String = row.get("keywords")?;
+        let persons_str: String = row.get("persons")?;
+        let entities_str: String = row.get("entities")?;
+        let timestamp_str: Option<String> = row.get("timestamp")?;
 
         Ok(MemoryEntry {
             entry_id,
-            lossless_restatement: row.get(1)?,
+            lossless_restatement: row.get("lossless_restatement")?,
             keywords: serde_json::from_str(&keywords_str).unwrap_or_default(),
             persons: serde_json::from_str(&persons_str).unwrap_or_default(),
             entities: serde_json::from_str(&entities_str).unwrap_or_default(),
-            location: {
-                let s: String = row.get(5)?;
-                if s.is_empty() { None } else { Some(s) }
-            },
-            topic: {
-                let s: String = row.get(6)?;
-                if s.is_empty() { None } else { Some(s) }
-            },
-            timestamp: if timestamp_str.is_empty() {
-                None
-            } else {
-                chrono::DateTime::parse_from_rfc3339(&timestamp_str)
+            location: row.get("location")?,
+            topic: row.get("topic")?,
+            timestamp: timestamp_str.and_then(|s| {
+                chrono::DateTime::parse_from_rfc3339(&s)
                     .map(|dt| dt.with_timezone(&chrono::Utc))
                     .ok()
-            },
+            }),
         })
     }
 }
@@ -161,53 +210,67 @@ impl VectorStore for SqliteVector {
 
         let conn = self.conn.lock().await;
 
-        for (entry, vector) in entries.iter().zip(vectors.iter()) {
-            if vector.len() != self.dimension {
-                return Err(VectorError::DimensionMismatch {
-                    expected: self.dimension,
-                    actual: vector.len(),
-                });
-            }
+        conn.execute("BEGIN", [])
+            .map_err(|e| VectorError::InsertionFailed(e.to_string()))?;
 
-            let timestamp_str = entry
-                .timestamp
-                .as_ref()
-                .map(chrono::DateTime::to_rfc3339)
-                .unwrap_or_default();
-
-            conn.execute(
-                &format!(
-                    "INSERT INTO {META_TABLE} (id, lossless_restatement, keywords, persons, entities, location, topic, timestamp)
-                     VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)"
-                ),
-                rusqlite::params![
-                    entry.entry_id.to_string(),
-                    entry.lossless_restatement,
-                    serde_json::to_string(&entry.keywords).unwrap_or_else(|_| "[]".to_string()),
-                    serde_json::to_string(&entry.persons).unwrap_or_else(|_| "[]".to_string()),
-                    serde_json::to_string(&entry.entities).unwrap_or_else(|_| "[]".to_string()),
-                    entry.location.as_deref().unwrap_or(""),
-                    entry.topic.as_deref().unwrap_or(""),
-                    timestamp_str,
-                ],
-            ).map_err(|e| VectorError::InsertionFailed(e.to_string()))?;
-
-            let rowid: i64 = conn
-                .query_row(
-                    &format!("SELECT rowid FROM {META_TABLE} WHERE id = ?1"),
-                    rusqlite::params![entry.entry_id.to_string()],
-                    |row| row.get(0),
-                )
+        let result = (|| {
+            let insert_meta_sql = format!(
+                "INSERT INTO {META_TABLE} (id, lossless_restatement, keywords, persons, entities, location, topic, timestamp)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)"
+            );
+            let mut insert_meta_stmt = conn
+                .prepare_cached(&insert_meta_sql)
                 .map_err(|e| VectorError::InsertionFailed(e.to_string()))?;
 
-            conn.execute(
-                &format!("INSERT INTO {TABLE_NAME} (rowid, embedding) VALUES (?1, ?2)"),
-                rusqlite::params![rowid, vec_to_bytes(vector)],
-            )
-            .map_err(|e| VectorError::InsertionFailed(e.to_string()))?;
-        }
+            let insert_vec_sql =
+                format!("INSERT INTO {TABLE_NAME} (rowid, embedding) VALUES (?1, ?2)");
+            let mut insert_vec_stmt = conn
+                .prepare_cached(&insert_vec_sql)
+                .map_err(|e| VectorError::InsertionFailed(e.to_string()))?;
 
-        Ok(())
+            for (entry, vector) in entries.iter().zip(vectors.iter()) {
+                if vector.len() != self.dimension {
+                    return Err(VectorError::DimensionMismatch {
+                        expected: self.dimension,
+                        actual: vector.len(),
+                    });
+                }
+
+                let timestamp_str = entry.timestamp.as_ref().map(chrono::DateTime::to_rfc3339);
+
+                insert_meta_stmt
+                    .execute(rusqlite::params![
+                        entry.entry_id.to_string(),
+                        entry.lossless_restatement,
+                        serde_json::to_string(&entry.keywords).unwrap_or_else(|_| "[]".to_string()),
+                        serde_json::to_string(&entry.persons).unwrap_or_else(|_| "[]".to_string()),
+                        serde_json::to_string(&entry.entities).unwrap_or_else(|_| "[]".to_string()),
+                        entry.location.as_ref(),
+                        entry.topic.as_ref(),
+                        timestamp_str,
+                    ])
+                    .map_err(|e| VectorError::InsertionFailed(e.to_string()))?;
+
+                let rowid = conn.last_insert_rowid();
+
+                insert_vec_stmt
+                    .execute(rusqlite::params![rowid, vec_to_bytes(vector)])
+                    .map_err(|e| VectorError::InsertionFailed(e.to_string()))?;
+            }
+            Ok(())
+        })();
+
+        match result {
+            Ok(()) => {
+                conn.execute("COMMIT", [])
+                    .map_err(|e| VectorError::InsertionFailed(e.to_string()))?;
+                Ok(())
+            }
+            Err(e) => {
+                let _ = conn.execute("ROLLBACK", []);
+                Err(e)
+            }
+        }
     }
 
     async fn semantic_search(
@@ -215,10 +278,17 @@ impl VectorStore for SqliteVector {
         query_vector: &[f32],
         top_k: usize,
     ) -> VectorResult<Vec<MemoryEntry>> {
+        if query_vector.len() != self.dimension {
+            return Err(VectorError::DimensionMismatch {
+                expected: self.dimension,
+                actual: query_vector.len(),
+            });
+        }
+
         let conn = self.conn.lock().await;
 
         let mut stmt = conn
-            .prepare(&format!(
+            .prepare_cached(&format!(
                 r"
                 SELECT m.id, m.lossless_restatement, m.keywords, m.persons, m.entities,
                        m.location, m.topic, m.timestamp
@@ -256,19 +326,19 @@ impl VectorStore for SqliteVector {
 
         let fts_query: String = keywords
             .iter()
-            .map(|kw| format!("\"{}\"", kw.replace('"', "\"\"")))
+            .map(|kw| escape_fts5_query(kw))
             .collect::<Vec<_>>()
             .join(" OR ");
 
         let mut stmt = conn
-            .prepare(&format!(
+            .prepare_cached(&format!(
                 r"
                 SELECT m.id, m.lossless_restatement, m.keywords, m.persons, m.entities,
                        m.location, m.topic, m.timestamp
-                FROM {FTS_TABLE}({FTS_TABLE}, rank)
-                JOIN {META_TABLE} m ON {FTS_TABLE}.rowid = m.rowid
-                WHERE {FTS_TABLE} MATCH ? 
-                ORDER BY rank 
+                FROM {FTS_TABLE} fts
+                JOIN {META_TABLE} m ON fts.rowid = m.rowid
+                WHERE {FTS_TABLE} MATCH ?
+                ORDER BY bm25(memory_fts)
                 LIMIT ?
                 "
             ))
@@ -302,56 +372,62 @@ impl VectorStore for SqliteVector {
 
         let conn = self.conn.lock().await;
         let mut conditions: Vec<String> = Vec::new();
+        let mut bind_params: Vec<Box<dyn rusqlite::ToSql>> = Vec::new();
 
         if let Some(ref persons) = params.persons
             && !persons.is_empty()
         {
-            let person_conditions: Vec<String> = persons
-                .iter()
-                .map(|p| {
-                    let escaped = p.replace(char::from(39), "''");
-                    format!("persons LIKE '%\"{escaped}\"%'")
-                })
-                .collect();
-            conditions.push(format!("({})", person_conditions.join(" OR ")));
+            let placeholders: Vec<String> = persons.iter().map(|_| "?".to_string()).collect();
+            conditions.push(format!(
+                "EXISTS (SELECT 1 FROM json_each(persons) WHERE value IN ({}))",
+                placeholders.join(", ")
+            ));
+            for person in persons {
+                bind_params.push(Box::new(person.clone()));
+            }
         }
 
         if let Some(ref location) = params.location {
-            let escaped = location.replace(char::from(39), "''");
-            conditions.push(format!("location LIKE '%{escaped}%'"));
+            conditions.push("location = ?".to_string());
+            bind_params.push(Box::new(location.clone()));
         }
 
         if let Some(ref entities) = params.entities
             && !entities.is_empty()
         {
-            let entity_conditions: Vec<String> = entities
-                .iter()
-                .map(|e| {
-                    let escaped = e.replace(char::from(39), "''");
-                    format!("entities LIKE '%\"{escaped}\"%'")
-                })
-                .collect();
-            conditions.push(format!("({})", entity_conditions.join(" OR ")));
+            let placeholders: Vec<String> = entities.iter().map(|_| "?".to_string()).collect();
+            conditions.push(format!(
+                "EXISTS (SELECT 1 FROM json_each(entities) WHERE value IN ({}))",
+                placeholders.join(", ")
+            ));
+            for entity in entities {
+                bind_params.push(Box::new(entity.clone()));
+            }
         }
 
         if let Some(ref time_range) = params.timestamp_range {
-            let start = time_range.start.to_rfc3339();
-            let end = time_range.end.to_rfc3339();
-            conditions.push(format!("timestamp >= '{start}' AND timestamp <= '{end}'"));
+            conditions.push("timestamp >= ? AND timestamp <= ?".to_string());
+            bind_params.push(Box::new(time_range.start.to_rfc3339()));
+            bind_params.push(Box::new(time_range.end.to_rfc3339()));
         }
 
         let where_clause = conditions.join(" AND ");
 
         let query = format!(
-            "SELECT id, lossless_restatement, keywords, persons, entities, location, topic, timestamp FROM {META_TABLE} WHERE {where_clause} LIMIT ?"
+            "SELECT id, lossless_restatement, keywords, persons, entities, location, topic, timestamp FROM {META_TABLE} WHERE {where_clause} ORDER BY timestamp DESC LIMIT ?"
         );
+
+        bind_params.push(Box::new(top_k as i64));
+
+        let params_refs: Vec<&dyn rusqlite::ToSql> =
+            bind_params.iter().map(|p| p.as_ref()).collect();
 
         let mut stmt = conn
             .prepare(&query)
             .map_err(|e| VectorError::SearchFailed(e.to_string()))?;
 
         let rows: Vec<std::result::Result<MemoryEntry, rusqlite::Error>> = stmt
-            .query_map(rusqlite::params![top_k as i64], Self::parse_entry_from_row)
+            .query_map(params_refs.as_slice(), Self::parse_entry_from_row)
             .map_err(|e| VectorError::SearchFailed(e.to_string()))?
             .collect();
 
@@ -376,19 +452,38 @@ impl VectorStore for SqliteVector {
             return Ok(false);
         };
 
-        conn.execute(
-            &format!("DELETE FROM {META_TABLE} WHERE id = ?1"),
-            rusqlite::params![entry_id.to_string()],
-        )
-        .map_err(|e| VectorError::DeletionFailed(e.to_string()))?;
+        conn.execute("BEGIN", [])
+            .map_err(|e| VectorError::DeletionFailed(e.to_string()))?;
 
-        conn.execute(
-            &format!("DELETE FROM {TABLE_NAME} WHERE rowid = ?1"),
-            rusqlite::params![rowid],
-        )
-        .map_err(|e| VectorError::DeletionFailed(e.to_string()))?;
+        let result = (|| {
+            let mut delete_meta_stmt = conn
+                .prepare_cached(&format!("DELETE FROM {META_TABLE} WHERE id = ?1"))
+                .map_err(|e| VectorError::DeletionFailed(e.to_string()))?;
+            delete_meta_stmt
+                .execute(rusqlite::params![entry_id.to_string()])
+                .map_err(|e| VectorError::DeletionFailed(e.to_string()))?;
 
-        Ok(true)
+            let mut delete_vec_stmt = conn
+                .prepare_cached(&format!("DELETE FROM {TABLE_NAME} WHERE rowid = ?1"))
+                .map_err(|e| VectorError::DeletionFailed(e.to_string()))?;
+            delete_vec_stmt
+                .execute(rusqlite::params![rowid])
+                .map_err(|e| VectorError::DeletionFailed(e.to_string()))?;
+
+            Ok(())
+        })();
+
+        match result {
+            Ok(()) => {
+                conn.execute("COMMIT", [])
+                    .map_err(|e| VectorError::DeletionFailed(e.to_string()))?;
+                Ok(true)
+            }
+            Err(e) => {
+                let _ = conn.execute("ROLLBACK", []);
+                Err(e)
+            }
+        }
     }
 
     async fn count(&self) -> VectorResult<usize> {
@@ -407,7 +502,7 @@ impl VectorStore for SqliteVector {
         let conn = self.conn.lock().await;
 
         let mut stmt = conn
-            .prepare(&format!(
+            .prepare_cached(&format!(
                 "SELECT id, lossless_restatement, keywords, persons, entities, location, topic, timestamp FROM {META_TABLE}"
             ))
             .map_err(|e| VectorError::SearchFailed(e.to_string()))?;
@@ -426,10 +521,10 @@ impl VectorStore for SqliteVector {
         let conn = self.conn.lock().await;
 
         let mut stmt = conn
-            .prepare(&format!(
+            .prepare_cached(&format!(
                 r"
                 SELECT m.id, m.lossless_restatement, m.keywords, m.persons, m.entities,
-                       m.location, m.topic, m.timestamp, v.embedding
+                       m.location, m.topic, m.timestamp, v.embedding AS embedding
                 FROM {META_TABLE} m
                 JOIN {TABLE_NAME} v ON m.rowid = v.rowid
                 "
@@ -439,7 +534,7 @@ impl VectorStore for SqliteVector {
         let rows: Vec<std::result::Result<(MemoryEntry, Vec<f32>), rusqlite::Error>> = stmt
             .query_map([], |row| {
                 let entry = Self::parse_entry_from_row(row)?;
-                let embedding_bytes: Vec<u8> = row.get(8)?;
+                let embedding_bytes: Vec<u8> = row.get("embedding")?;
                 let vector = bytes_to_vec(&embedding_bytes, self.dimension);
                 Ok((entry, vector))
             })
