@@ -51,7 +51,7 @@ pub async fn run(args: ListArgs, config: &CliConfig) -> Result<()> {
         .build()
         .await?;
 
-    let memories = chimpoe.list_memories().await;
+    let memories = chimpoe.list_memories().await?;
     let total = memories.len();
 
     if total == 0 {

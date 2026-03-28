@@ -619,4 +619,141 @@ mod tests {
         assert!(formatted.contains("User: Hello"));
         assert!(formatted.contains("Assistant: Hi there"));
     }
+
+    #[test]
+    fn test_parse_timestamp_rfc3339() {
+        let json = serde_json::json!({
+            "memories": [{
+                "lossless_restatement": "Meeting happened",
+                "keywords": [],
+                "persons": [],
+                "entities": [],
+                "location": null,
+                "topic": null,
+                "timestamp": "2025-11-16T14:30:00+07:00"
+            }]
+        });
+
+        let entries = Compressor::parse_extraction_response(&json).unwrap();
+        assert_eq!(entries.len(), 1);
+        assert!(entries[0].timestamp.is_some());
+        let ts = entries[0].timestamp.unwrap();
+        assert_eq!(ts.format("%Y-%m-%d").to_string(), "2025-11-16");
+    }
+
+    #[test]
+    fn test_parse_timestamp_naive_datetime() {
+        let json = serde_json::json!({
+            "memories": [{
+                "lossless_restatement": "Event occurred",
+                "keywords": [],
+                "persons": [],
+                "entities": [],
+                "location": null,
+                "topic": null,
+                "timestamp": "2025-03-15T09:00:00"
+            }]
+        });
+
+        let entries = Compressor::parse_extraction_response(&json).unwrap();
+        assert_eq!(entries.len(), 1);
+        assert!(entries[0].timestamp.is_some());
+        let ts = entries[0].timestamp.unwrap();
+        assert_eq!(
+            ts.format("%Y-%m-%dT%H:%M:%S").to_string(),
+            "2025-03-15T09:00:00"
+        );
+    }
+
+    #[test]
+    fn test_parse_timestamp_date_only() {
+        let json = serde_json::json!({
+            "memories": [{
+                "lossless_restatement": "Birthday celebration",
+                "keywords": [],
+                "persons": [],
+                "entities": [],
+                "location": null,
+                "topic": null,
+                "timestamp": "2025-07-20"
+            }]
+        });
+
+        let entries = Compressor::parse_extraction_response(&json).unwrap();
+        assert_eq!(entries.len(), 1);
+        assert!(entries[0].timestamp.is_some());
+        let ts = entries[0].timestamp.unwrap();
+        assert_eq!(
+            ts.format("%Y-%m-%dT%H:%M:%S").to_string(),
+            "2025-07-20T00:00:00"
+        );
+    }
+
+    #[test]
+    fn test_parse_timestamp_null_string() {
+        let json = serde_json::json!({
+            "memories": [{
+                "lossless_restatement": "No timestamp memory",
+                "keywords": [],
+                "persons": [],
+                "entities": [],
+                "location": null,
+                "topic": null,
+                "timestamp": "null"
+            }]
+        });
+
+        let entries = Compressor::parse_extraction_response(&json).unwrap();
+        assert_eq!(entries.len(), 1);
+        assert!(entries[0].timestamp.is_some());
+    }
+
+    #[test]
+    fn test_parse_timestamp_invalid_format() {
+        let json = serde_json::json!({
+            "memories": [{
+                "lossless_restatement": "Invalid timestamp",
+                "keywords": [],
+                "persons": [],
+                "entities": [],
+                "location": null,
+                "topic": null,
+                "timestamp": "not-a-date"
+            }]
+        });
+
+        let entries = Compressor::parse_extraction_response(&json).unwrap();
+        assert_eq!(entries.len(), 1);
+        assert!(entries[0].timestamp.is_some());
+    }
+
+    #[test]
+    fn test_format_previous_context_empty() {
+        let result = Compressor::format_previous_context(&[]);
+        assert!(result.is_empty());
+    }
+
+    #[test]
+    fn test_format_previous_context_limits_to_three() {
+        let entries: Vec<MemoryEntry> = (0..5)
+            .map(|i| MemoryEntry::new(format!("Memory entry {}", i)))
+            .collect();
+
+        let result = Compressor::format_previous_context(&entries);
+        assert!(result.contains("Memory entry 0"));
+        assert!(result.contains("Memory entry 1"));
+        assert!(result.contains("Memory entry 2"));
+        assert!(!result.contains("Memory entry 3"));
+        assert!(!result.contains("Memory entry 4"));
+        assert!(result.contains("[Previous Window Memory Entries"));
+    }
+
+    #[test]
+    fn test_format_previous_context_single_entry() {
+        let entries = vec![MemoryEntry::new("Only one memory".to_string())];
+
+        let result = Compressor::format_previous_context(&entries);
+        assert!(result.contains("- Only one memory"));
+        assert!(result.contains("[Previous Window Memory Entries"));
+    }
 }

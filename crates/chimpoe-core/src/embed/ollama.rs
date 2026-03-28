@@ -80,16 +80,33 @@ impl Embedder for OllamaEmbedder {
             .await
             .map_err(|e| EmbeddingError::ApiError(e.to_string()))?;
 
-        if !response.status().is_success() {
-            let status = response.status();
-            let body = response.text().await.unwrap_or_default();
+        let status = response.status();
+        let body = response
+            .text()
+            .await
+            .map_err(|e| EmbeddingError::ApiError(e.to_string()))?;
+
+        if !status.is_success() {
+            if status.as_u16() == 429 {
+                return Err(EmbeddingError::ApiError("Rate limited".to_string()));
+            }
+            if let Ok(error_response) = serde_json::from_str::<serde_json::Value>(&body) {
+                if let Some(error_msg) = error_response
+                    .get("error")
+                    .and_then(|e| e.get("message"))
+                    .and_then(|m| m.as_str())
+                {
+                    return Err(EmbeddingError::ApiError(error_msg.to_string()));
+                }
+                if let Some(error_msg) = error_response.get("error").and_then(|e| e.as_str()) {
+                    return Err(EmbeddingError::ApiError(error_msg.to_string()));
+                }
+            }
             return Err(EmbeddingError::ApiError(format!("HTTP {status}: {body}")));
         }
 
-        let embed_response: EmbedResponse = response
-            .json()
-            .await
-            .map_err(|e| EmbeddingError::ApiError(e.to_string()))?;
+        let embed_response: EmbedResponse =
+            serde_json::from_str(&body).map_err(|e| EmbeddingError::ApiError(e.to_string()))?;
 
         Ok(embed_response.embeddings)
     }

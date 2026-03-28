@@ -47,10 +47,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("{results}\n");
 
     println!("5. Stats:");
-    println!("   Memories stored: {}", chimpoe.memory_count().await);
+    println!("   Memories stored: {}", chimpoe.memory_count().await?);
 
     println!("\n6. All memories in DB:");
-    for (i, m) in chimpoe.list_memories().await.iter().enumerate() {
+    for (i, m) in chimpoe.list_memories().await?.iter().enumerate() {
         println!("\n   [{}]", i + 1);
         println!("   ID: {}", m.entry_id);
         println!("   Restatement: {}", m.lossless_restatement);

@@ -26,7 +26,7 @@ impl AnswerGenerator {
         let messages = vec![
             Message {
                 role: MessageRole::System,
-                content: "You are a professional Q&A assistant. Extract concise answers from context. You must output valid JSON format.".to_string(),
+                content: "You are a professional Q&A assistant. Extract concise answers from context. CRITICAL: You MUST answer in the SAME LANGUAGE as the user's question. You must output valid JSON format.".to_string(),
             },
             Message {
                 role: MessageRole::User,
@@ -48,7 +48,8 @@ impl AnswerGenerator {
                     }
                     last_raw_response = Some(response.to_string());
                 }
-                Err(_) => {
+                Err(e) => {
+                    tracing::warn!("JSON completion failed: {e}, falling back to plain completion");
                     if let Ok(raw) = self
                         .llm
                         .chat_completion(&messages, DEFAULT_TEMPERATURE)
@@ -64,6 +65,7 @@ impl AnswerGenerator {
             if let Some(answer) = Self::try_extract_json_from_text(&raw) {
                 return Ok(answer);
             }
+            tracing::warn!("Failed to extract JSON from LLM response, returning raw text");
             return Ok(raw);
         }
 
@@ -156,7 +158,9 @@ Requirements:
 2. Then provide a very CONCISE answer (short phrase about core information)
 3. Answer must be based ONLY on the provided context
 4. All dates in the response must be formatted as 'DD Month YYYY' but you can output more or less details if needed
-5. Return your response in JSON format
+5. CRITICAL: You MUST write the answer in the SAME LANGUAGE as the user's question. If the question is in Indonesian, answer in Indonesian. If in English, answer in English. Always match the question's language.
+6. If the context does not contain information to answer the question, say so in the question's language (e.g., "Tidak ada informasi tentang..." for Indonesian, "No information about..." for English)
+7. Return your response in JSON format
 
 Output Format:
 ```json
@@ -354,5 +358,112 @@ Some extra text"#;
         assert!(prompt.contains("Meeting at 2pm"));
         assert!(prompt.contains("reasoning"));
         assert!(prompt.contains("answer"));
+    }
+
+    #[tokio::test]
+    async fn test_generate_empty_contexts() {
+        use crate::mocks::MockLlmClient;
+        let llm = Arc::new(MockLlmClient::new());
+        let generator = AnswerGenerator::new(llm);
+
+        let result = generator.generate("What is X?", &[]).await.unwrap();
+        assert_eq!(result, "No relevant information found.");
+    }
+
+    #[tokio::test]
+    async fn test_generate_success_on_first_try() {
+        use crate::mocks::MockLlmClient;
+        let response = serde_json::json!({
+            "reasoning": "Based on context",
+            "answer": "The meeting is at 3pm"
+        });
+        let llm = Arc::new(MockLlmClient::with_responses(vec![response]));
+        let generator = AnswerGenerator::new(llm);
+
+        let contexts = vec![MemoryHit {
+            memory: "Meeting scheduled at 3pm".to_string(),
+            persons: vec![],
+            entities: vec![],
+            location: None,
+            topic: None,
+            timestamp: None,
+            source: "test".to_string(),
+        }];
+
+        let result = generator
+            .generate("When is the meeting?", &contexts)
+            .await
+            .unwrap();
+        assert_eq!(result, "The meeting is at 3pm");
+    }
+
+    #[tokio::test]
+    async fn test_generate_fallback_to_raw_text() {
+        use crate::mocks::MockLlmClient;
+        let llm = Arc::new(MockLlmClient::new());
+        let generator = AnswerGenerator::new(llm);
+
+        let contexts = vec![MemoryHit {
+            memory: "Some memory".to_string(),
+            persons: vec![],
+            entities: vec![],
+            location: None,
+            topic: None,
+            timestamp: None,
+            source: "test".to_string(),
+        }];
+
+        let result = generator.generate("What?", &contexts).await.unwrap();
+        assert_eq!(result, "mock response");
+    }
+
+    #[tokio::test]
+    async fn test_generate_retry_then_fallback_text() {
+        use crate::mocks::MockLlmClient;
+        let llm = Arc::new(MockLlmClient::with_both(
+            vec![serde_json::json!({"reasoning": "no answer field"})],
+            vec!["{\"answer\": \"recovered answer\"}".to_string()],
+        ));
+        let generator = AnswerGenerator::new(llm);
+
+        let contexts = vec![MemoryHit {
+            memory: "Some context".to_string(),
+            persons: vec![],
+            entities: vec![],
+            location: None,
+            topic: None,
+            timestamp: None,
+            source: "test".to_string(),
+        }];
+
+        let result = generator
+            .generate("Tell me something", &contexts)
+            .await
+            .unwrap();
+        assert_eq!(result, "recovered answer");
+    }
+
+    #[test]
+    fn test_build_prompt_indonesian_language() {
+        let question = "Apa waktu meetingnya?";
+        let context = "[Context 1]\nContent: Meeting jam 3 siang";
+
+        let prompt = AnswerGenerator::build_prompt(question, context);
+
+        assert!(prompt.contains("Apa waktu meetingnya?"));
+        assert!(prompt.contains("Meeting jam 3 siang"));
+        assert!(prompt.contains("reasoning"));
+        assert!(prompt.contains("answer"));
+    }
+
+    #[test]
+    fn test_build_prompt_japanese_language() {
+        let question = "会議は何時ですか？";
+        let context = "[Context 1]\nContent: Meeting is at 3pm";
+
+        let prompt = AnswerGenerator::build_prompt(question, context);
+
+        assert!(prompt.contains("会議は何時ですか？"));
+        assert!(prompt.contains("Meeting is at 3pm"));
     }
 }

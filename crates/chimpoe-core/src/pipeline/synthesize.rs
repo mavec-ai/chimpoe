@@ -450,6 +450,125 @@ mod tests {
         assert!((sim - 0.0).abs() < f32::EPSILON);
     }
 
+    #[tokio::test]
+    async fn test_filter_against_existing_empty_new() {
+        let synth = Synthesizer::new();
+        let existing = vec![(
+            make_entry("old memory", vec!["old"]),
+            vec![1.0_f32, 0.0, 0.0],
+        )];
+        let result = synth
+            .filter_against_existing(Vec::new(), &existing)
+            .await
+            .unwrap();
+        assert!(result.is_empty());
+    }
+
+    #[tokio::test]
+    async fn test_filter_against_existing_empty_existing() {
+        let synth = Synthesizer::new();
+        let new_entries = vec![make_entry("new memory", vec!["new"])];
+        let result = synth
+            .filter_against_existing(new_entries.clone(), &[])
+            .await
+            .unwrap();
+        assert_eq!(result.len(), 1);
+    }
+
+    #[tokio::test]
+    async fn test_filter_against_existing_keeps_novel() {
+        let synth = Synthesizer::new();
+        let new_entry = make_entry("User visited Tokyo", vec!["tokyo", "travel"]);
+        let existing = vec![(
+            make_entry("User works at Google", vec!["google", "work"]),
+            vec![1.0_f32, 0.0, 0.0],
+        )];
+        let result = synth
+            .filter_against_existing(vec![new_entry], &existing)
+            .await
+            .unwrap();
+        assert_eq!(result.len(), 1);
+    }
+
+    #[tokio::test]
+    async fn test_deduplicate_nfkc_unicode_normalization() {
+        let synth = Synthesizer::new();
+        let entry1 = make_entry("User likes Ｐｉｚｚａ", vec!["pizza"]);
+        let entry2 = make_entry("User likes Pizza", vec!["food"]);
+        let result = synth.synthesize(vec![entry1, entry2]).await.unwrap();
+        assert_eq!(result.len(), 1);
+    }
+
+    #[tokio::test]
+    async fn test_merge_cluster_preserves_location_and_topic() {
+        let synth = Synthesizer::new();
+
+        let shared = vec![
+            "project".to_string(),
+            "work".to_string(),
+            "team".to_string(),
+            "deadline".to_string(),
+            "sprint".to_string(),
+            "meeting".to_string(),
+            "collab".to_string(),
+            "agile".to_string(),
+        ];
+
+        let entry1 = MemoryEntry::new("Discussed roadmap".to_string())
+            .with_keywords(shared.clone())
+            .with_location("Office Room A".to_string())
+            .with_topic("Project Planning".to_string());
+
+        let entry2 = MemoryEntry::new("Reviewed backlog items".to_string())
+            .with_keywords(shared)
+            .with_persons(vec!["Alice".to_string()]);
+
+        let result = synth.synthesize(vec![entry1, entry2]).await.unwrap();
+        assert_eq!(result.len(), 1);
+        assert_eq!(result[0].location.as_deref(), Some("Office Room A"));
+        assert_eq!(result[0].topic.as_deref(), Some("Project Planning"));
+        assert!(result[0].persons.contains(&"Alice".to_string()));
+    }
+
+    #[tokio::test]
+    async fn test_merge_cluster_earliest_timestamp() {
+        let synth = Synthesizer::new();
+
+        let shared = vec![
+            "event".to_string(),
+            "conference".to_string(),
+            "talk".to_string(),
+            "speaker".to_string(),
+            "venue".to_string(),
+            "audience".to_string(),
+            "keynote".to_string(),
+            "schedule".to_string(),
+        ];
+
+        let mut entry1 =
+            MemoryEntry::new("Morning keynote".to_string()).with_keywords(shared.clone());
+        entry1.timestamp = Some(
+            chrono::DateTime::parse_from_rfc3339("2025-06-15T10:00:00Z")
+                .unwrap()
+                .to_utc(),
+        );
+
+        let mut entry2 = MemoryEntry::new("Afternoon workshop".to_string()).with_keywords(shared);
+        entry2.timestamp = Some(
+            chrono::DateTime::parse_from_rfc3339("2025-06-14T08:00:00Z")
+                .unwrap()
+                .to_utc(),
+        );
+
+        let result = synth.synthesize(vec![entry1, entry2]).await.unwrap();
+        assert_eq!(result.len(), 1);
+        let ts = result[0].timestamp.unwrap();
+        assert_eq!(
+            ts.format("%Y-%m-%dT%H:%M:%S").to_string(),
+            "2025-06-14T08:00:00"
+        );
+    }
+
     #[test]
     fn test_cosine_similarity_identical() {
         let a = vec![1.0, 0.0, 0.0];

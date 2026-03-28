@@ -181,10 +181,11 @@ impl Chimpoe {
         let retriever = match &self.retriever {
             Some(r) => r,
             None => {
-                return Ok(SearchResult {
-                    query: query.to_string(),
-                    results: Vec::new(),
-                });
+                return Err(crate::error::ChimpoeError::Pipeline(
+                    crate::error::PipelineError::InvalidInput(
+                        "No retriever configured. Ensure an LLM provider is set.".to_string(),
+                    ),
+                ));
             }
         };
 
@@ -227,8 +228,8 @@ impl Chimpoe {
         Ok(answer)
     }
 
-    pub async fn memory_count(&self) -> usize {
-        self.vector_store.count().await.unwrap_or(0)
+    pub async fn memory_count(&self) -> Result<usize> {
+        self.vector_store.count().await.map_err(Into::into)
     }
 
     #[must_use]
@@ -236,11 +237,11 @@ impl Chimpoe {
         self.dialogues.len()
     }
 
-    pub async fn list_memories(&self) -> Vec<MemoryEntry> {
+    pub async fn list_memories(&self) -> Result<Vec<MemoryEntry>> {
         self.vector_store
             .get_all_entries()
             .await
-            .unwrap_or_default()
+            .map_err(Into::into)
     }
 }
 

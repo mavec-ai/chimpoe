@@ -57,9 +57,13 @@ pub async fn run(_args: FinalizeArgs, config: &CliConfig) -> Result<()> {
         .build()
         .await?;
 
-    chimpoe.add_dialogues(dialogues.clone()).await?;
+    let before = chimpoe.memory_count().await?;
 
-    let memories_created = chimpoe.finalize().await?;
+    chimpoe.add_dialogues(dialogues.clone()).await?;
+    chimpoe.finalize().await?;
+
+    let after = chimpoe.memory_count().await?;
+    let memories_created = after.saturating_sub(before);
 
     if memories_created > 0 {
         println!(
@@ -67,14 +71,14 @@ pub async fn run(_args: FinalizeArgs, config: &CliConfig) -> Result<()> {
             "✓".green(),
             memories_created
         );
-        buffer::clear()?;
-        println!("  {} Buffer cleared", "✓".green());
     } else {
         println!("  {} No new memories extracted", "!".yellow());
     }
 
-    let total_memories = chimpoe.memory_count().await;
-    println!("\n  Total memories: {total_memories}");
+    buffer::clear()?;
+    println!("  {} Buffer cleared", "✓".green());
+
+    println!("\n  Total memories: {after}");
 
     Ok(())
 }

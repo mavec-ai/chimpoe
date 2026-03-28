@@ -137,16 +137,33 @@ impl LlmClient for OllamaLlm {
             .await
             .map_err(|e| LlmError::ApiError(e.to_string()))?;
 
-        if !response.status().is_success() {
-            let status = response.status();
-            let body = response.text().await.unwrap_or_default();
+        let status = response.status();
+        let body = response
+            .text()
+            .await
+            .map_err(|e| LlmError::ApiError(e.to_string()))?;
+
+        if !status.is_success() {
+            if status.as_u16() == 429 {
+                return Err(LlmError::RateLimited);
+            }
+            if let Ok(error_response) = serde_json::from_str::<serde_json::Value>(&body) {
+                if let Some(error_msg) = error_response
+                    .get("error")
+                    .and_then(|e| e.get("message"))
+                    .and_then(|m| m.as_str())
+                {
+                    return Err(LlmError::ApiError(error_msg.to_string()));
+                }
+                if let Some(error_msg) = error_response.get("error").and_then(|e| e.as_str()) {
+                    return Err(LlmError::ApiError(error_msg.to_string()));
+                }
+            }
             return Err(LlmError::ApiError(format!("HTTP {status}: {body}")));
         }
 
-        let chat_response: ChatResponse = response
-            .json()
-            .await
-            .map_err(|e| LlmError::InvalidResponse(e.to_string()))?;
+        let chat_response: ChatResponse =
+            serde_json::from_str(&body).map_err(|e| LlmError::InvalidResponse(e.to_string()))?;
 
         chat_response
             .choices
@@ -177,16 +194,33 @@ impl LlmClient for OllamaLlm {
             .await
             .map_err(|e| LlmError::ApiError(e.to_string()))?;
 
-        if !response.status().is_success() {
-            let status = response.status();
-            let body = response.text().await.unwrap_or_default();
+        let status = response.status();
+        let body = response
+            .text()
+            .await
+            .map_err(|e| LlmError::ApiError(e.to_string()))?;
+
+        if !status.is_success() {
+            if status.as_u16() == 429 {
+                return Err(LlmError::RateLimited);
+            }
+            if let Ok(error_response) = serde_json::from_str::<serde_json::Value>(&body) {
+                if let Some(error_msg) = error_response
+                    .get("error")
+                    .and_then(|e| e.get("message"))
+                    .and_then(|m| m.as_str())
+                {
+                    return Err(LlmError::ApiError(error_msg.to_string()));
+                }
+                if let Some(error_msg) = error_response.get("error").and_then(|e| e.as_str()) {
+                    return Err(LlmError::ApiError(error_msg.to_string()));
+                }
+            }
             return Err(LlmError::ApiError(format!("HTTP {status}: {body}")));
         }
 
-        let chat_response: ChatResponse = response
-            .json()
-            .await
-            .map_err(|e| LlmError::InvalidResponse(e.to_string()))?;
+        let chat_response: ChatResponse =
+            serde_json::from_str(&body).map_err(|e| LlmError::InvalidResponse(e.to_string()))?;
 
         let content = chat_response
             .choices

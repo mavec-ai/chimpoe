@@ -106,7 +106,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
 
     println!("7. Stats:");
-    println!("   Memories stored: {}", chimpoe.memory_count().await);
+    println!("   Memories stored: {}", chimpoe.memory_count().await?);
 
     println!("\n=== Demo Complete ===");
     Ok(())

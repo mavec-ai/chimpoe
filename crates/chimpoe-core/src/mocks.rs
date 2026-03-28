@@ -28,22 +28,37 @@ impl Embedder for MockEmbedder {
 }
 
 pub struct MockLlmClient {
-    responses: Arc<Mutex<Vec<serde_json::Value>>>,
-    call_count: Arc<Mutex<usize>>,
+    json_responses: Arc<Mutex<Vec<serde_json::Value>>>,
+    text_responses: Arc<Mutex<Vec<String>>>,
+    json_call_count: Arc<Mutex<usize>>,
+    text_call_count: Arc<Mutex<usize>>,
 }
 
 impl MockLlmClient {
     pub fn new() -> Self {
         Self {
-            responses: Arc::new(Mutex::new(Vec::new())),
-            call_count: Arc::new(Mutex::new(0)),
+            json_responses: Arc::new(Mutex::new(Vec::new())),
+            text_responses: Arc::new(Mutex::new(vec!["mock response".to_string()])),
+            json_call_count: Arc::new(Mutex::new(0)),
+            text_call_count: Arc::new(Mutex::new(0)),
         }
     }
 
     pub fn with_responses(responses: Vec<serde_json::Value>) -> Self {
         Self {
-            responses: Arc::new(Mutex::new(responses)),
-            call_count: Arc::new(Mutex::new(0)),
+            json_responses: Arc::new(Mutex::new(responses)),
+            text_responses: Arc::new(Mutex::new(vec!["mock response".to_string()])),
+            json_call_count: Arc::new(Mutex::new(0)),
+            text_call_count: Arc::new(Mutex::new(0)),
+        }
+    }
+
+    pub fn with_both(json_responses: Vec<serde_json::Value>, text_responses: Vec<String>) -> Self {
+        Self {
+            json_responses: Arc::new(Mutex::new(json_responses)),
+            text_responses: Arc::new(Mutex::new(text_responses)),
+            json_call_count: Arc::new(Mutex::new(0)),
+            text_call_count: Arc::new(Mutex::new(0)),
         }
     }
 }
@@ -51,7 +66,18 @@ impl MockLlmClient {
 #[async_trait]
 impl LlmClient for MockLlmClient {
     async fn chat_completion(&self, _messages: &[Message], _temperature: f32) -> LlmResult<String> {
-        Ok("mock response".to_string())
+        let mut count = self.text_call_count.lock().unwrap();
+        *count += 1;
+        let idx = *count - 1;
+
+        let responses = self.text_responses.lock().unwrap();
+        if idx < responses.len() {
+            Ok(responses[idx].clone())
+        } else {
+            Err(crate::error::LlmError::ApiError(
+                "No mock text response configured".to_string(),
+            ))
+        }
     }
 
     async fn chat_completion_with_json(
@@ -59,11 +85,11 @@ impl LlmClient for MockLlmClient {
         _messages: &[Message],
         _temperature: f32,
     ) -> LlmResult<serde_json::Value> {
-        let mut count = self.call_count.lock().unwrap();
+        let mut count = self.json_call_count.lock().unwrap();
         *count += 1;
         let idx = *count - 1;
 
-        let responses = self.responses.lock().unwrap();
+        let responses = self.json_responses.lock().unwrap();
         if idx < responses.len() {
             Ok(responses[idx].clone())
         } else {

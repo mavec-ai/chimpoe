@@ -629,4 +629,212 @@ mod tests {
         let result = TimeRange::parse("not a date");
         assert!(result.is_none());
     }
+
+    #[test]
+    fn test_rrf_single_channel_score_calculation() {
+        let id1 = uuid::Uuid::new_v4();
+        let id2 = uuid::Uuid::new_v4();
+        let id3 = uuid::Uuid::new_v4();
+
+        let e1 = MemoryEntry {
+            entry_id: id1,
+            lossless_restatement: "First".to_string(),
+            keywords: vec![],
+            timestamp: None,
+            location: None,
+            persons: vec![],
+            entities: vec![],
+            topic: None,
+        };
+        let e2 = MemoryEntry {
+            entry_id: id2,
+            lossless_restatement: "Second".to_string(),
+            keywords: vec![],
+            timestamp: None,
+            location: None,
+            persons: vec![],
+            entities: vec![],
+            topic: None,
+        };
+        let e3 = MemoryEntry {
+            entry_id: id3,
+            lossless_restatement: "Third".to_string(),
+            keywords: vec![],
+            timestamp: None,
+            location: None,
+            persons: vec![],
+            entities: vec![],
+            topic: None,
+        };
+
+        let channels: [(&str, Vec<MemoryEntry>); 1] = [("semantic", vec![e1, e2, e3])];
+        let results = HybridRetriever::reciprocal_rank_fusion(&channels, 10);
+
+        assert_eq!(results.len(), 3);
+        let expected_rank1 = 1.0 / (60.0f64 + 1.0);
+        let expected_rank2 = 1.0 / (60.0f64 + 2.0);
+        let expected_rank3 = 1.0 / (60.0f64 + 3.0);
+
+        assert!((results[0].score as f64 - expected_rank1).abs() < 1e-5);
+        assert!((results[1].score as f64 - expected_rank2).abs() < 1e-5);
+        assert!((results[2].score as f64 - expected_rank3).abs() < 1e-5);
+    }
+
+    #[test]
+    fn test_rrf_multi_channel_score_accumulation() {
+        let id_shared = uuid::Uuid::new_v4();
+        let id_only_a = uuid::Uuid::new_v4();
+
+        let shared = MemoryEntry {
+            entry_id: id_shared,
+            lossless_restatement: "Shared entry".to_string(),
+            keywords: vec![],
+            timestamp: None,
+            location: None,
+            persons: vec![],
+            entities: vec![],
+            topic: None,
+        };
+        let only_a = MemoryEntry {
+            entry_id: id_only_a,
+            lossless_restatement: "Only in A".to_string(),
+            keywords: vec![],
+            timestamp: None,
+            location: None,
+            persons: vec![],
+            entities: vec![],
+            topic: None,
+        };
+
+        let channels: [(&str, Vec<MemoryEntry>); 2] = [
+            ("semantic", vec![shared.clone(), only_a]),
+            ("lexical", vec![shared]),
+        ];
+        let results = HybridRetriever::reciprocal_rank_fusion(&channels, 10);
+
+        assert_eq!(results.len(), 2);
+
+        let shared_score_semantic = 1.0 / (60.0f64 + 1.0);
+        let shared_score_lexical = 1.0 / (60.0f64 + 1.0);
+        let shared_total = shared_score_semantic + shared_score_lexical;
+
+        let only_a_score = 1.0 / (60.0f64 + 2.0);
+
+        assert!((results[0].score as f64 - shared_total).abs() < 1e-5);
+        assert!((results[1].score as f64 - only_a_score).abs() < 1e-5);
+        assert_eq!(results[0].memory, "Shared entry");
+        assert_eq!(results[1].memory, "Only in A");
+    }
+
+    #[test]
+    fn test_rrf_top_k_truncation() {
+        let entries: Vec<MemoryEntry> = (0..10)
+            .map(|_| MemoryEntry::new(format!("Entry {}", uuid::Uuid::new_v4())))
+            .collect();
+
+        let channels: [(&str, Vec<MemoryEntry>); 1] = [("semantic", entries)];
+        let results = HybridRetriever::reciprocal_rank_fusion(&channels, 3);
+
+        assert_eq!(results.len(), 3);
+    }
+
+    #[test]
+    fn test_rrf_empty_channels() {
+        let channels: [(&str, Vec<MemoryEntry>); 3] = [
+            ("structured", vec![]),
+            ("lexical", vec![]),
+            ("semantic", vec![]),
+        ];
+        let results = HybridRetriever::reciprocal_rank_fusion(&channels, 5);
+        assert!(results.is_empty());
+    }
+
+    #[test]
+    fn test_rrf_sorted_by_score_descending() {
+        let id1 = uuid::Uuid::new_v4();
+        let id2 = uuid::Uuid::new_v4();
+
+        let e1 = MemoryEntry {
+            entry_id: id1,
+            lossless_restatement: "Low rank".to_string(),
+            keywords: vec![],
+            timestamp: None,
+            location: None,
+            persons: vec![],
+            entities: vec![],
+            topic: None,
+        };
+        let e2 = MemoryEntry {
+            entry_id: id2,
+            lossless_restatement: "High rank".to_string(),
+            keywords: vec![],
+            timestamp: None,
+            location: None,
+            persons: vec![],
+            entities: vec![],
+            topic: None,
+        };
+
+        let channels: [(&str, Vec<MemoryEntry>); 2] =
+            [("semantic", vec![e1.clone()]), ("lexical", vec![e2, e1])];
+        let results = HybridRetriever::reciprocal_rank_fusion(&channels, 10);
+
+        assert_eq!(results.len(), 2);
+        assert!(results[0].score >= results[1].score);
+
+        let id1_score = 1.0 / (60.0f64 + 1.0) + 1.0 / (60.0f64 + 2.0);
+        assert!((results[0].score as f64 - id1_score).abs() < 1e-5);
+        assert_eq!(results[0].memory, "Low rank");
+    }
+
+    #[tokio::test]
+    async fn test_multi_channel_retrieval_integration() {
+        let id1 = uuid::Uuid::new_v4();
+        let id2 = uuid::Uuid::new_v4();
+
+        let e1 = MemoryEntry {
+            entry_id: id1,
+            lossless_restatement: "Alice works at Google in Jakarta".to_string(),
+            keywords: vec!["google".to_string()],
+            timestamp: None,
+            location: Some("Jakarta".to_string()),
+            persons: vec!["Alice".to_string()],
+            entities: vec!["Google".to_string()],
+            topic: None,
+        };
+        let e2 = MemoryEntry {
+            entry_id: id2,
+            lossless_restatement: "Bob works at Apple in Bandung".to_string(),
+            keywords: vec!["apple".to_string()],
+            timestamp: None,
+            location: Some("Bandung".to_string()),
+            persons: vec!["Bob".to_string()],
+            entities: vec!["Apple".to_string()],
+            topic: None,
+        };
+
+        let analysis_response = serde_json::json!({
+            "keywords": ["works", "Google"],
+            "persons": ["Alice"],
+            "entities": ["Google"],
+            "location": "Jakarta",
+            "time_expression": null
+        });
+
+        let llm = MockLlmClient::with_responses(vec![analysis_response]);
+        let vector_store = MockVectorStore::with_entries(vec![
+            (e1.clone(), vec![0.1; 64]),
+            (e2.clone(), vec![0.2; 64]),
+        ]);
+        let embedder = MockEmbedder::new(64);
+        let retriever = create_retriever(llm, vector_store, embedder);
+
+        let results = retriever
+            .retrieve("Where does Alice work?", Some(5))
+            .await
+            .unwrap();
+
+        assert!(!results.is_empty());
+        assert!(results[0].memory.contains("Alice"));
+    }
 }
