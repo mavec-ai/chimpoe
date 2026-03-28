@@ -17,6 +17,8 @@ pub struct MemoryEntry {
     #[serde(default)]
     pub entities: Vec<String>,
     pub topic: Option<String>,
+    #[serde(default)]
+    pub cluster_id: Option<String>,
 }
 
 impl MemoryEntry {
@@ -31,6 +33,7 @@ impl MemoryEntry {
             persons: Vec::new(),
             entities: Vec::new(),
             topic: None,
+            cluster_id: None,
         }
     }
 
@@ -67,6 +70,12 @@ impl MemoryEntry {
     #[must_use]
     pub fn with_topic(mut self, topic: String) -> Self {
         self.topic = Some(topic);
+        self
+    }
+
+    #[must_use]
+    pub fn with_cluster_id(mut self, cluster_id: String) -> Self {
+        self.cluster_id = Some(cluster_id);
         self
     }
 }

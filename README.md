@@ -72,7 +72,7 @@ let result = memory.search("authentication approach", Some(5)).await?;
 let answer = memory.ask("What did Deni decide about authentication?").await?;
 
 // List all stored memories
-let all_memories = memory.list_memories().await;
+let all_memories = memory.list_memories().await?;
 ```
 
 ## How It Works
@@ -102,7 +102,9 @@ Raw dialogues are transformed into structured memory entries via LLM.
 
 ### Stage 2: Synthesize
 
-Similar memories are merged and duplicates removed using hybrid similarity (80% semantic vectors + 20% entity overlap).
+Similar memories are grouped via **Cluster ID Linking**: memories exceeding the hybrid similarity threshold (80% semantic + 20% Jaccard on keywords/persons/entities) share a `cluster_id`. Each memory remains a separate entry with its own embedding — nothing is overwritten or discarded. On retrieval, hitting one cluster member automatically expands to pull all siblings.
+
+Cross-batch deduplication also checks new memories against existing stored memories.
 
 **Before (3 memories):**
 ```
@@ -111,10 +113,11 @@ Similar memories are merged and duplicates removed using hybrid similarity (80% 
 3. "The team chose PostgreSQL for the database" [entities: PostgreSQL]
 ```
 
-**After (2 memories):**
+**After (3 memories, 2 clustered):**
 ```
-1. "Deni is building an authentication API" [persons: Deni]  ← kept
-2. "The team chose PostgreSQL for the database" [entities: PostgreSQL]
+1. "Deni is building an authentication API"  [cluster_id: "a1b2"] [persons: Deni]
+2. "Deni is developing an API for user auth" [cluster_id: "a1b2"] [persons: Deni]
+3. "The team chose PostgreSQL for the database"
 ```
 
 ### Stage 3: Retrieve
@@ -139,6 +142,7 @@ Hybrid search combines semantic similarity, keyword matching (FTS5), and structu
 - **Semantic**: Vector similarity search with configurable top-k
 - **Keyword**: Full-text search with FTS5 (Porter tokenizer)
 - **Structured**: Filter by persons, entities, location, time expressions
+- **Cluster Expansion**: Memories linked by `cluster_id` are auto-expanded on retrieval
 - **Query Analysis**: LLM extracts search parameters from natural language queries
 
 ### Storage

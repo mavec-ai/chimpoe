@@ -216,4 +216,20 @@ impl VectorStore for MockVectorStore {
             .map(|(e, v)| (e.clone(), v.clone()))
             .collect())
     }
+
+    async fn get_by_cluster_ids(&self, cluster_ids: &[String]) -> VectorResult<Vec<MemoryEntry>> {
+        let store = self.entries.lock().unwrap();
+        let id_set: std::collections::HashSet<&str> =
+            cluster_ids.iter().map(|s| s.as_str()).collect();
+        Ok(store
+            .iter()
+            .filter(|(entry, _)| {
+                entry
+                    .cluster_id
+                    .as_deref()
+                    .is_some_and(|cid| id_set.contains(cid))
+            })
+            .map(|(e, _)| e.clone())
+            .collect())
+    }
 }

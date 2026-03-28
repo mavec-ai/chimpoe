@@ -58,4 +58,5 @@ pub trait VectorStore: Send + Sync {
     async fn count(&self) -> VectorResult<usize>;
     async fn get_all_entries(&self) -> VectorResult<Vec<MemoryEntry>>;
     async fn get_all_entries_with_vectors(&self) -> VectorResult<Vec<(MemoryEntry, Vec<f32>)>>;
+    async fn get_by_cluster_ids(&self, cluster_ids: &[String]) -> VectorResult<Vec<MemoryEntry>>;
 }

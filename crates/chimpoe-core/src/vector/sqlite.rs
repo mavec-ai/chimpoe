@@ -124,12 +124,14 @@ impl SqliteVector {
                 entities TEXT NOT NULL,
                 location TEXT,
                 topic TEXT,
-                timestamp TEXT
+                timestamp TEXT,
+                cluster_id TEXT
             );
 
             CREATE INDEX IF NOT EXISTS idx_timestamp ON {META_TABLE}(timestamp);
             CREATE INDEX IF NOT EXISTS idx_location ON {META_TABLE}(location);
             CREATE INDEX IF NOT EXISTS idx_topic ON {META_TABLE}(topic);
+            CREATE INDEX IF NOT EXISTS idx_cluster_id ON {META_TABLE}(cluster_id);
 
             CREATE VIRTUAL TABLE IF NOT EXISTS {TABLE_NAME} USING vec0(
                 embedding float[{dimension}]
@@ -195,6 +197,7 @@ impl SqliteVector {
                     .map(|dt| dt.with_timezone(&chrono::Utc))
                     .ok()
             }),
+            cluster_id: row.get("cluster_id")?,
         })
     }
 }
@@ -215,8 +218,8 @@ impl VectorStore for SqliteVector {
 
         let result = (|| {
             let insert_meta_sql = format!(
-                "INSERT INTO {META_TABLE} (id, lossless_restatement, keywords, persons, entities, location, topic, timestamp)
-                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)"
+                "INSERT INTO {META_TABLE} (id, lossless_restatement, keywords, persons, entities, location, topic, timestamp, cluster_id)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)"
             );
             let mut insert_meta_stmt = conn
                 .prepare_cached(&insert_meta_sql)
@@ -248,6 +251,7 @@ impl VectorStore for SqliteVector {
                         entry.location.as_ref(),
                         entry.topic.as_ref(),
                         timestamp_str,
+                        entry.cluster_id.as_ref(),
                     ])
                     .map_err(|e| VectorError::InsertionFailed(e.to_string()))?;
 
@@ -291,7 +295,7 @@ impl VectorStore for SqliteVector {
             .prepare_cached(&format!(
                 r"
                 SELECT m.id, m.lossless_restatement, m.keywords, m.persons, m.entities,
-                       m.location, m.topic, m.timestamp
+                       m.location, m.topic, m.timestamp, m.cluster_id
                 FROM {TABLE_NAME} v
                 JOIN {META_TABLE} m ON v.rowid = m.rowid
                 WHERE v.embedding MATCH ? AND k = ?
@@ -334,7 +338,7 @@ impl VectorStore for SqliteVector {
             .prepare_cached(&format!(
                 r"
                 SELECT m.id, m.lossless_restatement, m.keywords, m.persons, m.entities,
-                       m.location, m.topic, m.timestamp
+                       m.location, m.topic, m.timestamp, m.cluster_id
                 FROM {FTS_TABLE} fts
                 JOIN {META_TABLE} m ON fts.rowid = m.rowid
                 WHERE {FTS_TABLE} MATCH ?
@@ -414,7 +418,7 @@ impl VectorStore for SqliteVector {
         let where_clause = conditions.join(" AND ");
 
         let query = format!(
-            "SELECT id, lossless_restatement, keywords, persons, entities, location, topic, timestamp FROM {META_TABLE} WHERE {where_clause} ORDER BY timestamp DESC LIMIT ?"
+            "SELECT id, lossless_restatement, keywords, persons, entities, location, topic, timestamp, cluster_id FROM {META_TABLE} WHERE {where_clause} ORDER BY timestamp DESC LIMIT ?"
         );
 
         bind_params.push(Box::new(top_k as i64));
@@ -503,7 +507,7 @@ impl VectorStore for SqliteVector {
 
         let mut stmt = conn
             .prepare_cached(&format!(
-                "SELECT id, lossless_restatement, keywords, persons, entities, location, topic, timestamp FROM {META_TABLE}"
+                "SELECT id, lossless_restatement, keywords, persons, entities, location, topic, timestamp, cluster_id FROM {META_TABLE}"
             ))
             .map_err(|e| VectorError::SearchFailed(e.to_string()))?;
 
@@ -524,7 +528,7 @@ impl VectorStore for SqliteVector {
             .prepare_cached(&format!(
                 r"
                 SELECT m.id, m.lossless_restatement, m.keywords, m.persons, m.entities,
-                       m.location, m.topic, m.timestamp, v.embedding AS embedding
+                       m.location, m.topic, m.timestamp, m.cluster_id, v.embedding AS embedding
                 FROM {META_TABLE} m
                 JOIN {TABLE_NAME} v ON m.rowid = v.rowid
                 "
@@ -538,6 +542,37 @@ impl VectorStore for SqliteVector {
                 let vector = bytes_to_vec(&embedding_bytes, self.dimension);
                 Ok((entry, vector))
             })
+            .map_err(|e| VectorError::SearchFailed(e.to_string()))?
+            .collect();
+
+        rows.into_iter()
+            .map(|r| r.map_err(|e| VectorError::SearchFailed(e.to_string())))
+            .collect()
+    }
+
+    async fn get_by_cluster_ids(&self, cluster_ids: &[String]) -> VectorResult<Vec<MemoryEntry>> {
+        if cluster_ids.is_empty() {
+            return Ok(Vec::new());
+        }
+
+        let conn = self.conn.lock().await;
+
+        let placeholders = vec!["?"; cluster_ids.len()].join(", ");
+        let sql = format!(
+            "SELECT id, lossless_restatement, keywords, persons, entities, location, topic, timestamp, cluster_id FROM {META_TABLE} WHERE cluster_id IN ({placeholders})"
+        );
+
+        let params: Vec<&dyn rusqlite::types::ToSql> = cluster_ids
+            .iter()
+            .map(|id| id as &dyn rusqlite::types::ToSql)
+            .collect();
+
+        let mut stmt = conn
+            .prepare(&sql)
+            .map_err(|e| VectorError::SearchFailed(e.to_string()))?;
+
+        let rows: Vec<std::result::Result<MemoryEntry, rusqlite::Error>> = stmt
+            .query_map(params.as_slice(), Self::parse_entry_from_row)
             .map_err(|e| VectorError::SearchFailed(e.to_string()))?
             .collect();
 

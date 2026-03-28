@@ -154,7 +154,9 @@ impl HybridRetriever {
         let merged =
             Self::merge_and_deduplicate(structured_results, semantic_results, lexical_results, k);
 
-        Ok(merged)
+        let expanded = self.expand_clusters(merged).await?;
+
+        Ok(expanded)
     }
 
     async fn semantic_search(&self, query: &str, top_k: usize) -> Result<Vec<MemoryEntry>> {
@@ -243,10 +245,60 @@ impl HybridRetriever {
             })
             .collect()
     }
+
+    async fn expand_clusters(&self, hits: Vec<RetrievalHit>) -> Result<Vec<RetrievalHit>> {
+        let unique_cluster_ids: Vec<String> = hits
+            .iter()
+            .filter_map(|h| h.cluster_id.clone())
+            .collect::<std::collections::HashSet<_>>()
+            .into_iter()
+            .collect();
+
+        if unique_cluster_ids.is_empty() {
+            return Ok(hits);
+        }
+
+        let cluster_siblings = match self
+            .vector_store
+            .get_by_cluster_ids(&unique_cluster_ids)
+            .await
+        {
+            Ok(entries) => entries,
+            Err(e) => {
+                tracing::warn!("Failed to expand clusters: {}", e);
+                return Ok(hits);
+            }
+        };
+
+        let seen_ids: std::collections::HashSet<uuid::Uuid> =
+            hits.iter().map(|h| h.entry_id).collect();
+
+        let mut expanded = hits;
+        for sibling in cluster_siblings {
+            if seen_ids.contains(&sibling.entry_id) {
+                continue;
+            }
+            expanded.push(RetrievalHit {
+                entry_id: sibling.entry_id,
+                memory: sibling.lossless_restatement,
+                persons: sibling.persons,
+                entities: sibling.entities,
+                location: sibling.location,
+                topic: sibling.topic,
+                timestamp: sibling.timestamp.map(|t| t.to_rfc3339()),
+                source: "cluster".to_string(),
+                score: 0.0,
+                cluster_id: sibling.cluster_id,
+            });
+        }
+
+        Ok(expanded)
+    }
 }
 
 #[derive(Debug, Clone)]
 pub struct RetrievalHit {
+    pub entry_id: uuid::Uuid,
     pub memory: String,
     pub persons: Vec<String>,
     pub entities: Vec<String>,
@@ -255,12 +307,14 @@ pub struct RetrievalHit {
     pub timestamp: Option<String>,
     pub source: String,
     pub score: f32,
+    pub cluster_id: Option<String>,
 }
 
 impl RetrievalHit {
     #[must_use]
     pub fn from_entry(entry: MemoryEntry, source: &str) -> Self {
         Self {
+            entry_id: entry.entry_id,
             memory: entry.lossless_restatement,
             persons: entry.persons,
             entities: entry.entities,
@@ -269,12 +323,14 @@ impl RetrievalHit {
             timestamp: entry.timestamp.map(|t| t.to_rfc3339()),
             source: source.to_string(),
             score: 0.0,
+            cluster_id: entry.cluster_id,
         }
     }
 
     #[must_use]
     pub fn from_entry_with_score(entry: MemoryEntry, source: &str, score: f32) -> Self {
         Self {
+            entry_id: entry.entry_id,
             memory: entry.lossless_restatement,
             persons: entry.persons,
             entities: entry.entities,
@@ -283,6 +339,7 @@ impl RetrievalHit {
             timestamp: entry.timestamp.map(|t| t.to_rfc3339()),
             source: source.to_string(),
             score,
+            cluster_id: entry.cluster_id,
         }
     }
 }
@@ -534,6 +591,7 @@ mod tests {
     #[test]
     fn test_retrieval_hit_display() {
         let hit = RetrievalHit {
+            entry_id: uuid::Uuid::new_v4(),
             memory: "Test memory".to_string(),
             persons: vec!["Alice".to_string()],
             entities: vec!["Google".to_string()],
@@ -542,6 +600,7 @@ mod tests {
             timestamp: None,
             source: "semantic".to_string(),
             score: 0.0167,
+            cluster_id: None,
         };
 
         let display = format!("{hit}");
@@ -555,6 +614,7 @@ mod tests {
     #[test]
     fn test_retrieval_hit_display_minimal() {
         let hit = RetrievalHit {
+            entry_id: uuid::Uuid::new_v4(),
             memory: "Simple memory".to_string(),
             persons: vec![],
             entities: vec![],
@@ -563,6 +623,7 @@ mod tests {
             timestamp: None,
             source: "lexical".to_string(),
             score: 0.0,
+            cluster_id: None,
         };
 
         let display = format!("{hit}");
@@ -645,6 +706,7 @@ mod tests {
             persons: vec![],
             entities: vec![],
             topic: None,
+            cluster_id: None,
         };
         let e2 = MemoryEntry {
             entry_id: id2,
@@ -655,6 +717,7 @@ mod tests {
             persons: vec![],
             entities: vec![],
             topic: None,
+            cluster_id: None,
         };
         let e3 = MemoryEntry {
             entry_id: id3,
@@ -665,6 +728,7 @@ mod tests {
             persons: vec![],
             entities: vec![],
             topic: None,
+            cluster_id: None,
         };
 
         let channels: [(&str, Vec<MemoryEntry>); 1] = [("semantic", vec![e1, e2, e3])];
@@ -694,6 +758,7 @@ mod tests {
             persons: vec![],
             entities: vec![],
             topic: None,
+            cluster_id: None,
         };
         let only_a = MemoryEntry {
             entry_id: id_only_a,
@@ -704,6 +769,7 @@ mod tests {
             persons: vec![],
             entities: vec![],
             topic: None,
+            cluster_id: None,
         };
 
         let channels: [(&str, Vec<MemoryEntry>); 2] = [
@@ -763,6 +829,7 @@ mod tests {
             persons: vec![],
             entities: vec![],
             topic: None,
+            cluster_id: None,
         };
         let e2 = MemoryEntry {
             entry_id: id2,
@@ -773,6 +840,7 @@ mod tests {
             persons: vec![],
             entities: vec![],
             topic: None,
+            cluster_id: None,
         };
 
         let channels: [(&str, Vec<MemoryEntry>); 2] =
@@ -801,6 +869,7 @@ mod tests {
             persons: vec!["Alice".to_string()],
             entities: vec!["Google".to_string()],
             topic: None,
+            cluster_id: None,
         };
         let e2 = MemoryEntry {
             entry_id: id2,
@@ -811,6 +880,7 @@ mod tests {
             persons: vec!["Bob".to_string()],
             entities: vec!["Apple".to_string()],
             topic: None,
+            cluster_id: None,
         };
 
         let analysis_response = serde_json::json!({

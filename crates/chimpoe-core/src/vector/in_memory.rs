@@ -183,6 +183,22 @@ impl VectorStore for InMemoryVector {
             .map(|(entry, vec)| (entry.clone(), vec.clone()))
             .collect())
     }
+
+    async fn get_by_cluster_ids(&self, cluster_ids: &[String]) -> VectorResult<Vec<MemoryEntry>> {
+        let data = self.data.read().await;
+        let id_set: std::collections::HashSet<&str> =
+            cluster_ids.iter().map(|s| s.as_str()).collect();
+        Ok(data
+            .values()
+            .filter(|(entry, _)| {
+                entry
+                    .cluster_id
+                    .as_deref()
+                    .is_some_and(|cid| id_set.contains(cid))
+            })
+            .map(|(entry, _)| entry.clone())
+            .collect())
+    }
 }
 
 fn cosine_similarity(a: &[f32], b: &[f32]) -> f32 {
