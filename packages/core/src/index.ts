@@ -71,3 +71,25 @@ export {
   type SearchMemoryOptions,
   type ListMemoriesOptions,
 } from "./memory/index.ts";
+export {
+  sendMessage,
+  checkInbox,
+  markRead,
+  markAllRead,
+  countUnread,
+  listConversations,
+  type MessageType,
+  type AgentMessage,
+  type SendMessageInput,
+  type CheckInboxOptions,
+  type Conversation,
+} from "./messaging/index.ts";
+export {
+  spawnAgent,
+  stopAgent,
+  getProcessInfo,
+  listProcesses,
+  type SpawnAgentOptions,
+  type SpawnedProcess,
+  type ProcessInfo,
+} from "./process/index.ts";

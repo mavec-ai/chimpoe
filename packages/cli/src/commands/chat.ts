@@ -9,9 +9,11 @@ import {
   recordTurn,
   updateAgentStatus,
   type ChatMessage,
+  listAgents,
 } from "@chimpoe/core";
 import { type AgentConfig, type Provider, getConfigPath, getChimpoeHome } from "@chimpoe/types";
 import { randomUUID } from "node:crypto";
+import { resolveAgent } from "../utils/resolve.ts";
 
 async function loadEnvFile(): Promise<void> {
   const envPath = `${getChimpoeHome()}/.env`;
@@ -158,11 +160,11 @@ export default defineCommand({
     await loadEnvFile();
 
     if (args.agentId) {
-      const idPrefix = args.agentId;
-      const agents = await import("@chimpoe/core").then((m) => m.listAgents());
-      const match = agents.find((a) => a.id === idPrefix || a.id.startsWith(idPrefix));
+      const idQuery = args.agentId;
+      const agents = await listAgents();
+      const match = resolveAgent(agents, idQuery);
       if (!match) {
-        console.error(color.red(`No agent matching "${idPrefix}".`));
+        console.error(color.red(`No agent matching "${idQuery}".`));
         console.error(color.dim(`Run ${color.cyan("chimpoe list")} to see agents.`));
         process.exit(1);
       }

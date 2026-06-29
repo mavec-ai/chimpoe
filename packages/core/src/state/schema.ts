@@ -58,4 +58,22 @@ CREATE TABLE IF NOT EXISTS memories (
 CREATE INDEX IF NOT EXISTS idx_memories_agent_type ON memories(agent_id, type);
 CREATE INDEX IF NOT EXISTS idx_memories_agent_recent ON memories(agent_id, created_at);
 CREATE INDEX IF NOT EXISTS idx_memories_agent_importance ON memories(agent_id, importance DESC);
+
+CREATE TABLE IF NOT EXISTS messages (
+  id TEXT PRIMARY KEY,
+  from_agent_id TEXT NOT NULL,
+  to_agent_id TEXT NOT NULL,
+  type TEXT NOT NULL DEFAULT 'text' CHECK (type IN ('text', 'task', 'result', 'system')),
+  content TEXT NOT NULL,
+  in_reply_to TEXT,
+  metadata_json TEXT,
+  created_at INTEGER NOT NULL,
+  read_at INTEGER,
+  FOREIGN KEY (from_agent_id) REFERENCES agents(id) ON DELETE CASCADE,
+  FOREIGN KEY (to_agent_id) REFERENCES agents(id) ON DELETE CASCADE
+);
+
+CREATE INDEX IF NOT EXISTS idx_messages_to_unread ON messages(to_agent_id, read_at);
+CREATE INDEX IF NOT EXISTS idx_messages_to_time ON messages(to_agent_id, created_at);
+CREATE INDEX IF NOT EXISTS idx_messages_from_time ON messages(from_agent_id, created_at);
 `;

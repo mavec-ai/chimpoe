@@ -89,7 +89,9 @@ export async function getAgent(id: string): Promise<AgentConfig | null> {
 
 export async function listAgents(): Promise<AgentConfig[]> {
   return withDb((db) => {
-    const rows = db.prepare("SELECT * FROM agents ORDER BY created_at DESC").all() as AgentRow[];
+    const rows = db
+      .prepare("SELECT * FROM agents WHERE id != 'user' ORDER BY created_at DESC")
+      .all() as AgentRow[];
     return rows.map(rowToConfig);
   });
 }

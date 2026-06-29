@@ -11,6 +11,14 @@ import {
   writeMemory,
   type MemoryType,
 } from "../memory/index.ts";
+import {
+  checkInbox,
+  listConversations,
+  markRead,
+  sendMessage,
+  type MessageType,
+} from "../messaging/index.ts";
+import { listAgents } from "../state/agents.ts";
 
 export const shellTool: Tool = tool({
   description:
@@ -211,6 +219,90 @@ export function builtinTools(agentId?: string): Record<string, Tool> {
         if (!existing) return { deleted: false, message: "Memory not found." };
         await deleteMemory(id);
         return { deleted: true, message: `Deleted: ${existing.content.slice(0, 80)}` };
+      },
+    });
+    tools.message_agent = tool({
+      description:
+        "Send a message to another agent by id (or short id prefix). Use type 'task' when " +
+        "assigning work, 'text' for general chat, 'result' for a task response. " +
+        "The receiving agent will see this in its inbox on its next poll (if running as a daemon) " +
+        "or when it next calls check_inbox.",
+      inputSchema: z.object({
+        toAgentId: z.string().describe("Destination agent id or short prefix"),
+        content: z.string().describe("Message body"),
+        type: z.enum(["text", "task", "result"]).optional().describe("Message type (default text)"),
+      }),
+      execute: async ({ toAgentId, content, type }) => {
+        const all = await listAgents();
+        const match = all.find((a) => a.id === toAgentId || a.id.startsWith(toAgentId));
+        if (!match) {
+          return { sent: false, message: `No agent matching "${toAgentId}".` };
+        }
+        const msg = await sendMessage({
+          fromAgentId: agentId,
+          toAgentId: match.id,
+          content,
+          type: (type ?? "text") as MessageType,
+        });
+        return {
+          sent: true,
+          messageId: msg.id,
+          toName: match.name,
+          toId: match.id,
+        };
+      },
+    });
+    tools.check_inbox = tool({
+      description:
+        "Check your inbox for messages from other agents. Returns unread messages first. " +
+        "Use this proactively if you are waiting for a reply or expecting work.",
+      inputSchema: z.object({
+        unreadOnly: z.boolean().optional().describe("Only unread (default true)"),
+        limit: z.number().min(1).max(50).optional().describe("Max messages (default 10)"),
+      }),
+      execute: async ({ unreadOnly, limit }) => {
+        const messages = await checkInbox(agentId, {
+          unreadOnly: unreadOnly ?? true,
+          limit,
+        });
+        return {
+          count: messages.length,
+          messages: messages.map((m) => ({
+            id: m.id,
+            from: m.fromAgentId,
+            type: m.type,
+            content: m.content,
+            createdAt: new Date(m.createdAt).toISOString(),
+            inReplyTo: m.inReplyTo,
+          })),
+        };
+      },
+    });
+    tools.mark_message_read = tool({
+      description: "Mark a received message as read by id. Done automatically when you reply.",
+      inputSchema: z.object({ messageId: z.string() }),
+      execute: async ({ messageId }) => {
+        await markRead(messageId);
+        return { marked: true };
+      },
+    });
+    tools.list_peers = tool({
+      description:
+        "List other agents you can message, plus your recent conversations (last message per peer).",
+      inputSchema: z.object({}),
+      execute: async () => {
+        const [allAgents, convos] = await Promise.all([listAgents(), listConversations(agentId)]);
+        return {
+          agents: allAgents
+            .filter((a) => a.id !== agentId)
+            .map((a) => ({ id: a.id, name: a.name, status: a.status, tier: a.tier })),
+          conversations: convos.map((c) => ({
+            partnerId: c.partnerId,
+            lastContent: c.lastMessage.content.slice(0, 120),
+            lastAt: new Date(c.lastMessage.createdAt).toISOString(),
+            unread: c.unreadCount,
+          })),
+        };
       },
     });
   }

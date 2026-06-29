@@ -19,6 +19,11 @@ const main = defineCommand({
     chat: () => import("./commands/chat.ts").then((m) => m.default),
     spawn: () => import("./commands/spawn.ts").then((m) => m.default),
     list: () => import("./commands/list.ts").then((m) => m.default),
+    start: () => import("./commands/start.ts").then((m) => m.default),
+    stop: () => import("./commands/stop.ts").then((m) => m.default),
+    ps: () => import("./commands/ps.ts").then((m) => m.default),
+    message: () => import("./commands/message.ts").then((m) => m.default),
+    inbox: () => import("./commands/inbox.ts").then((m) => m.default),
   },
 });
 
