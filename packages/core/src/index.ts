@@ -43,6 +43,8 @@ export {
   listAgents,
   updateAgentStatus,
   deleteAgent,
+  adjustBudget,
+  transferBudget,
   recordTurn,
   listTurns,
   listTurnsBySession,
@@ -50,6 +52,7 @@ export {
   getRecentHistory,
   type CreateAgentInput,
   type RecordTurnInput,
+  type TransferResult,
   type ChatMessage,
 } from "./state/index.ts";
 export {
@@ -93,3 +96,17 @@ export {
   type SpawnedProcess,
   type ProcessInfo,
 } from "./process/index.ts";
+export {
+  getParent,
+  getChildren,
+  getAncestors,
+  getDescendants,
+  getRoots,
+  getSiblings,
+  getLineageTree,
+  getLineageSummary,
+  getBudget,
+  type LineageNode,
+  type LineageSummary,
+} from "./lineage/index.ts";
+export { spawnChild, type SpawnChildInput, type SpawnChildResult } from "./replication/index.ts";

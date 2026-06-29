@@ -124,3 +124,56 @@ export async function deleteAgent(id: string): Promise<void> {
     db.prepare("DELETE FROM agents WHERE id = ?").run(id);
   });
 }
+
+export async function adjustBudget(agentId: string, deltaTokens: number): Promise<number> {
+  return withDb((db) => {
+    db.prepare(
+      "UPDATE agents SET budget_tokens = MAX(0, budget_tokens + ?), updated_at = ? WHERE id = ?",
+    ).run(deltaTokens, Date.now(), agentId);
+    const row = db.prepare("SELECT budget_tokens FROM agents WHERE id = ?").get(agentId) as
+      | { budget_tokens: number }
+      | undefined;
+    return row?.budget_tokens ?? 0;
+  });
+}
+
+export interface TransferResult {
+  fromBalance: number;
+  toBalance: number;
+  transferred: number;
+}
+
+export async function transferBudget(
+  fromAgentId: string,
+  toAgentId: string,
+  amountTokens: number,
+): Promise<TransferResult> {
+  if (amountTokens <= 0) throw new Error("amount must be positive");
+  return withDb((db) => {
+    const fromRow = db.prepare("SELECT budget_tokens FROM agents WHERE id = ?").get(fromAgentId) as
+      | { budget_tokens: number }
+      | undefined;
+    if (!fromRow) throw new Error(`Agent ${fromAgentId} not found`);
+    if (fromRow.budget_tokens < amountTokens) {
+      throw new Error(`Insufficient budget: have ${fromRow.budget_tokens}, need ${amountTokens}`);
+    }
+    const now = Date.now();
+    db.prepare(
+      "UPDATE agents SET budget_tokens = budget_tokens - ?, updated_at = ? WHERE id = ?",
+    ).run(amountTokens, now, fromAgentId);
+    db.prepare(
+      "UPDATE agents SET budget_tokens = budget_tokens + ?, updated_at = ? WHERE id = ?",
+    ).run(amountTokens, now, toAgentId);
+    const fromAfter = db
+      .prepare("SELECT budget_tokens FROM agents WHERE id = ?")
+      .get(fromAgentId) as { budget_tokens: number };
+    const toAfter = db.prepare("SELECT budget_tokens FROM agents WHERE id = ?").get(toAgentId) as {
+      budget_tokens: number;
+    };
+    return {
+      fromBalance: fromAfter.budget_tokens,
+      toBalance: toAfter.budget_tokens,
+      transferred: amountTokens,
+    };
+  });
+}

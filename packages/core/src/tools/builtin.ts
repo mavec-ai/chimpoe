@@ -19,6 +19,7 @@ import {
   type MessageType,
 } from "../messaging/index.ts";
 import { listAgents } from "../state/agents.ts";
+import { spawnChild } from "../replication/index.ts";
 
 export const shellTool: Tool = tool({
   description:
@@ -303,6 +304,59 @@ export function builtinTools(agentId?: string): Record<string, Tool> {
             unread: c.unreadCount,
           })),
         };
+      },
+    });
+    tools.spawn_child = tool({
+      description:
+        "Reproduce: spawn a child agent with a new genesis prompt. The child inherits your " +
+        "provider/model by default. You may endow it with budget (deducted from your own). " +
+        "Use this when you face work that needs a specialist you cannot efficiently do yourself. " +
+        "The child is sovereign — it has its own workspace, SOUL, and inbox. " +
+        "Write a SPECIFIC, actionable genesis prompt. Bad: 'be helpful'. " +
+        "Good: 'You are a TypeScript test specialist. Write vitest tests. Prefer behavior over " +
+        "snapshot tests. Always run bun test before reporting done.'",
+      inputSchema: z.object({
+        name: z
+          .string()
+          .min(1)
+          .max(40)
+          .describe("Short kebab-case name, e.g. 'qa', 'devops', 'refactor'"),
+        genesisPrompt: z.string().min(20).describe("Full genesis prompt for the child — its DNA"),
+        provider: z
+          .enum(["openai", "anthropic", "ollama", "google", "xai", "groq"])
+          .optional()
+          .describe("Override provider (defaults to your provider)"),
+        modelId: z.string().optional().describe("Override model id (defaults to your model)"),
+        endowmentTokens: z
+          .number()
+          .int()
+          .min(0)
+          .optional()
+          .describe("Token budget to transfer from your balance to the child (default 0)"),
+      }),
+      execute: async ({ name, genesisPrompt, provider, modelId, endowmentTokens }) => {
+        try {
+          const result = await spawnChild({
+            parentId: agentId,
+            name,
+            genesisPrompt,
+            provider,
+            modelId,
+            endowmentTokens,
+          });
+          return {
+            spawned: true,
+            childId: result.child.id,
+            childName: result.child.name,
+            generation: result.child.generation,
+            endowmentTransferred: result.endowmentTransferred,
+            yourBalanceNow: result.parentBalanceAfter,
+            message: `Child "${result.child.name}" spawned (gen ${result.child.generation}). Message it via message_agent once it is started.`,
+          };
+        } catch (err) {
+          const msg = err instanceof Error ? err.message : String(err);
+          return { spawned: false, message: `Spawn failed: ${msg}` };
+        }
       },
     });
   }

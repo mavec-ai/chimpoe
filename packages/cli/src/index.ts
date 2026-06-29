@@ -24,6 +24,8 @@ const main = defineCommand({
     ps: () => import("./commands/ps.ts").then((m) => m.default),
     message: () => import("./commands/message.ts").then((m) => m.default),
     inbox: () => import("./commands/inbox.ts").then((m) => m.default),
+    tree: () => import("./commands/tree.ts").then((m) => m.default),
+    lineage: () => import("./commands/lineage.ts").then((m) => m.default),
   },
 });
 

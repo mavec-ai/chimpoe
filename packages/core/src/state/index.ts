@@ -6,7 +6,10 @@ export {
   listAgents,
   updateAgentStatus,
   deleteAgent,
+  adjustBudget,
+  transferBudget,
   type CreateAgentInput,
+  type TransferResult,
 } from "./agents.ts";
 export {
   recordTurn,
