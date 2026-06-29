@@ -26,6 +26,9 @@ const main = defineCommand({
     inbox: () => import("./commands/inbox.ts").then((m) => m.default),
     tree: () => import("./commands/tree.ts").then((m) => m.default),
     lineage: () => import("./commands/lineage.ts").then((m) => m.default),
+    status: () => import("./commands/status.ts").then((m) => m.default),
+    fund: () => import("./commands/fund.ts").then((m) => m.default),
+    reward: () => import("./commands/reward.ts").then((m) => m.default),
   },
 });
 

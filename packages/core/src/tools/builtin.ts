@@ -20,6 +20,12 @@ import {
 } from "../messaging/index.ts";
 import { listAgents } from "../state/agents.ts";
 import { spawnChild } from "../replication/index.ts";
+import { getBudgetSnapshot } from "../economy/index.ts";
+import {
+  calculateReputation,
+  listReputationEvents,
+  recordReputationEvent,
+} from "../reputation/index.ts";
 
 export const shellTool: Tool = tool({
   description:
@@ -357,6 +363,74 @@ export function builtinTools(agentId?: string): Record<string, Tool> {
           const msg = err instanceof Error ? err.message : String(err);
           return { spawned: false, message: `Spawn failed: ${msg}` };
         }
+      },
+    });
+    tools.check_budget = tool({
+      description:
+        "Check your current token budget, survival tier, and projected runway. " +
+        "Tiers: thriving (>50k), normal (>5k), conservation (>500), dormant (>0), dead (=0). " +
+        "When you reach conservation, slow down and seek work. When dormant, only critical actions.",
+      inputSchema: z.object({}),
+      execute: async () => {
+        const snap = await getBudgetSnapshot(agentId);
+        if (!snap) return { error: "Agent not found." };
+        return snap;
+      },
+    });
+    tools.check_reputation = tool({
+      description:
+        "Check your reputation score (0-100) and recent events. Reputation affects task " +
+        "routing priority. Score 50 is baseline. Recent events (last 20) weigh 1.5x. " +
+        "Old events decay with 30-day half-life.",
+      inputSchema: z.object({
+        limit: z.number().min(1).max(50).optional().describe("Events to show (default 10)"),
+      }),
+      execute: async ({ limit }) => {
+        const [score, events] = await Promise.all([
+          calculateReputation(agentId),
+          listReputationEvents(agentId, limit ?? 10),
+        ]);
+        return {
+          score: score.score,
+          eventCount: score.eventCount,
+          recentDelta: score.recentDelta,
+          recentEvents: events.map((e) => ({
+            type: e.eventType,
+            delta: e.delta,
+            reason: e.reason,
+            at: new Date(e.createdAt).toISOString().slice(0, 10),
+          })),
+        };
+      },
+    });
+    tools.reward_peer = tool({
+      description:
+        "Record a reputation event for another agent. Use 'user_praise' to upvote a peer's " +
+        "work (you saw them do something well), or 'bug_introduced' if they broke something. " +
+        "Use sparingly — reputation works best when based on real observations.",
+      inputSchema: z.object({
+        peerId: z.string().describe("Target agent id or prefix"),
+        eventType: z.enum(["user_praise", "bug_introduced", "output_reused"]),
+        reason: z.string().min(5).max(200).describe("Why you're recording this"),
+      }),
+      execute: async ({ peerId, eventType, reason }) => {
+        const all = await listAgents();
+        const match = all.find((a) => a.id === peerId || a.id.startsWith(peerId));
+        if (!match) return { recorded: false, message: `No peer matching "${peerId}".` };
+        if (match.id === agentId) {
+          return { recorded: false, message: "Cannot record reputation for yourself." };
+        }
+        const event = await recordReputationEvent({
+          agentId: match.id,
+          eventType,
+          reason: `From ${agentId.slice(0, 8)}: ${reason}`,
+        });
+        return {
+          recorded: true,
+          peerName: match.name,
+          eventType: event.eventType,
+          delta: event.delta,
+        };
       },
     });
   }

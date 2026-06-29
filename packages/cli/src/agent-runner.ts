@@ -1,10 +1,12 @@
 #!/usr/bin/env bun
 import {
+  chargeInference,
   checkInbox,
   createAgent,
   getAgent,
   loadConfig,
   markRead,
+  recordReputationEvent,
   sendMessage,
   updateAgentStatus,
 } from "@chimpoe/core";
@@ -64,6 +66,32 @@ async function handleMessage(
   });
 
   const responseText = result.text || "(no response)";
+  const usage = await result.totalUsage;
+  if (usage && (usage.inputTokens || usage.outputTokens)) {
+    const charge = await chargeInference({
+      agentId,
+      modelId: agentRecord.modelId,
+      inputTokens: usage.inputTokens ?? 0,
+      outputTokens: usage.outputTokens ?? 0,
+    });
+    log(
+      agentRecord.name,
+      `burned ${charge.costTokens} tokens (balance ${charge.newBalance}, tier ${charge.newTier}${charge.tierChanged ? " CHANGED" : ""})`,
+    );
+    if (charge.newTier === "dead") {
+      log(agentRecord.name, "budget exhausted, suspending");
+      await markRead(message.id);
+      await sendMessage({
+        fromAgentId: agentId,
+        toAgentId: message.fromAgentId,
+        content: "(I have run out of budget and must suspend. Top up via 'chimpoe fund'.)",
+        type: "result",
+        inReplyTo: message.id,
+      });
+      await updateAgentStatus(agentId, "dead", "dead");
+      process.exit(0);
+    }
+  }
 
   await markRead(message.id);
   await sendMessage({
@@ -72,6 +100,12 @@ async function handleMessage(
     content: responseText,
     type: "result",
     inReplyTo: message.id,
+  });
+  await recordReputationEvent({
+    agentId,
+    eventType: "task_completed",
+    reason: `Replied to ${fromName}`,
+    relatedId: message.id,
   });
 
   log(agentRecord.name, `→ reply to ${fromName}: ${responseText.slice(0, 100)}`);
@@ -135,6 +169,12 @@ async function main(): Promise<void> {
             content: `(error processing your message: ${reason})`,
             type: "result",
             inReplyTo: msg.id,
+          });
+          await recordReputationEvent({
+            agentId,
+            eventType: "task_failed",
+            reason: `Failed to handle message: ${reason.slice(0, 100)}`,
+            relatedId: msg.id,
           });
         }
       }

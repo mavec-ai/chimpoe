@@ -76,4 +76,17 @@ CREATE TABLE IF NOT EXISTS messages (
 CREATE INDEX IF NOT EXISTS idx_messages_to_unread ON messages(to_agent_id, read_at);
 CREATE INDEX IF NOT EXISTS idx_messages_to_time ON messages(to_agent_id, created_at);
 CREATE INDEX IF NOT EXISTS idx_messages_from_time ON messages(from_agent_id, created_at);
+
+CREATE TABLE IF NOT EXISTS reputation_events (
+  id TEXT PRIMARY KEY,
+  agent_id TEXT NOT NULL,
+  event_type TEXT NOT NULL,
+  delta INTEGER NOT NULL,
+  reason TEXT,
+  related_id TEXT,
+  created_at INTEGER NOT NULL,
+  FOREIGN KEY (agent_id) REFERENCES agents(id) ON DELETE CASCADE
+);
+
+CREATE INDEX IF NOT EXISTS idx_rep_agent_time ON reputation_events(agent_id, created_at DESC);
 `;

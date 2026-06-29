@@ -3,6 +3,7 @@ import color from "picocolors";
 import * as readline from "node:readline/promises";
 import { stdin, stdout } from "node:process";
 import {
+  chargeInference,
   createAgent,
   getRecentHistory,
   loadConfig,
@@ -82,10 +83,23 @@ async function persistentRepl(agentConfig: AgentConfig): Promise<void> {
           assistantText += chunk;
         }
         const usage = await result.totalUsage;
+        let chargeInfo: { costTokens: number; newBalance: number; newTier: string } | null = null;
+        if (usage && (usage.inputTokens || usage.outputTokens)) {
+          const charge = await chargeInference({
+            agentId: agentConfig.id,
+            modelId: agentConfig.modelId,
+            inputTokens: usage.inputTokens ?? 0,
+            outputTokens: usage.outputTokens ?? 0,
+          });
+          chargeInfo = charge;
+        }
+        const balanceStr = chargeInfo
+          ? color.dim(` bal=${chargeInfo.newBalance} tier=${chargeInfo.newTier}`)
+          : "";
         const usageStr =
           usage && (usage.inputTokens || usage.outputTokens)
             ? color.dim(
-                `  [${usage.inputTokens ?? 0}↑ ${usage.outputTokens ?? 0}↓ ${Date.now() - start}ms]`,
+                `  [${usage.inputTokens ?? 0}↑ ${usage.outputTokens ?? 0}↓ ${Date.now() - start}ms${balanceStr}]`,
               )
             : color.dim(`  [${Date.now() - start}ms]`);
         process.stdout.write("\n" + usageStr + "\n\n");

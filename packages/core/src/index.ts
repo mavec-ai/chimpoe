@@ -110,3 +110,29 @@ export {
   type LineageSummary,
 } from "./lineage/index.ts";
 export { spawnChild, type SpawnChildInput, type SpawnChildResult } from "./replication/index.ts";
+export {
+  getModelPrice,
+  chargeInference,
+  calculateTier,
+  applyTierTransition,
+  getBudgetSnapshot,
+  fundAgent,
+  getAgentBudgets,
+  TIER_THRESHOLDS,
+  type ModelPrice,
+  type ChargeInput,
+  type ChargeResult,
+  type TierTransitionResult,
+  type BudgetSnapshot,
+} from "./economy/index.ts";
+export {
+  recordReputationEvent,
+  calculateReputation,
+  listReputationEvents,
+  bulkReputation,
+  EVENT_DELTAS,
+  type ReputationEventType,
+  type ReputationEvent,
+  type RecordEventInput,
+  type ReputationScore,
+} from "./reputation/index.ts";
