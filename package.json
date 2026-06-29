@@ -1,24 +1,37 @@
 {
   "name": "chimpoe",
   "private": true,
-  "scripts": {
-    "build": "turbo run build",
-    "dev": "turbo run dev",
-    "lint": "turbo run lint",
-    "format": "prettier --write \"**/*.{ts,tsx,md}\"",
-    "check-types": "turbo run check-types"
-  },
-  "devDependencies": {
-    "prettier": "^3.7.4",
-    "turbo": "^2.10.0",
-    "typescript": "5.9.2"
-  },
-  "engines": {
-    "node": ">=18"
-  },
-  "packageManager": "bun@1.3.14",
   "workspaces": [
     "apps/*",
     "packages/*"
-  ]
+  ],
+  "scripts": {
+    "build": "turbo run build",
+    "dev": "turbo run dev",
+    "lint": "oxlint",
+    "lint:fix": "oxlint --fix",
+    "fmt": "oxfmt",
+    "fmt:check": "oxfmt --check",
+    "check-types": "turbo run check-types",
+    "knip": "knip",
+    "clean": "turbo run clean && rm -rf node_modules .turbo",
+    "prepare": "test -d .git && lefthook install || true"
+  },
+  "devDependencies": {
+    "@commitlint/cli": "^21.1.0",
+    "@commitlint/config-conventional": "^21.1.0",
+    "@tsconfig/bun": "^1.0.10",
+    "@types/bun": "^1.2.0",
+    "@types/node": "^22.10.0",
+    "knip": "^6.23.0",
+    "lefthook": "^2.1.9",
+    "oxfmt": "^0.56.0",
+    "oxlint": "^1.71.0",
+    "turbo": "^2.10.0",
+    "typescript": "^6.0.3"
+  },
+  "engines": {
+    "bun": ">=1.3.0"
+  },
+  "packageManager": "bun@1.3.14"
 }
