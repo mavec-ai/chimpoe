@@ -1,6 +1,7 @@
 import { initAgentWorkspace } from "../workspace/index.ts";
 import { registerAgent, transferBudget, type CreateAgentInput } from "../state/index.ts";
 import { getAgent } from "../state/agents.ts";
+import { inheritFossilsIntoMemory } from "../fossils/index.ts";
 import type { AgentConfig, Provider } from "@chimpoe/types";
 
 export interface SpawnChildInput {
@@ -16,6 +17,7 @@ export interface SpawnChildResult {
   child: AgentConfig;
   endowmentTransferred: number;
   parentBalanceAfter: number;
+  inheritedFossils: Array<{ fromAgentName: string; generation: number; relevanceScore: number }>;
 }
 
 export async function spawnChild(input: SpawnChildInput): Promise<SpawnChildResult> {
@@ -57,9 +59,18 @@ export async function spawnChild(input: SpawnChildInput): Promise<SpawnChildResu
     parentBalanceAfter = transfer.fromBalance;
   }
 
+  const inherited = await inheritFossilsIntoMemory(child.id, parent.id, input.genesisPrompt).catch(
+    () => [],
+  );
+
   return {
     child,
     endowmentTransferred: endowment,
     parentBalanceAfter,
+    inheritedFossils: inherited.map((f) => ({
+      fromAgentName: f.fromAgentName,
+      generation: f.generation,
+      relevanceScore: f.relevanceScore,
+    })),
   };
 }

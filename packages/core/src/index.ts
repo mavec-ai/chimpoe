@@ -136,3 +136,22 @@ export {
   type RecordEventInput,
   type ReputationScore,
 } from "./reputation/index.ts";
+export {
+  saveFossil,
+  getFossil,
+  getFossilByAgent,
+  listFossils,
+  searchFossils,
+  countFossils,
+  deleteFossil,
+  distillAgent,
+  extractKeywords,
+  selectRelevantFossils,
+  inheritFossilsIntoMemory,
+  type Fossil,
+  type SaveFossilInput,
+  type SearchFossilsOptions,
+  type DistillOptions,
+  type DistillResult,
+  type InheritedFossil,
+} from "./fossils/index.ts";

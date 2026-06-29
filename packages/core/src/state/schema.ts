@@ -89,4 +89,19 @@ CREATE TABLE IF NOT EXISTS reputation_events (
 );
 
 CREATE INDEX IF NOT EXISTS idx_rep_agent_time ON reputation_events(agent_id, created_at DESC);
+
+CREATE TABLE IF NOT EXISTS fossils (
+  id TEXT PRIMARY KEY,
+  agent_id TEXT NOT NULL,
+  agent_name TEXT NOT NULL,
+  generation INTEGER NOT NULL,
+  content TEXT NOT NULL,
+  lineage_path TEXT,
+  keywords_json TEXT,
+  created_at INTEGER NOT NULL,
+  UNIQUE(agent_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_fossils_generation ON fossils(generation);
+CREATE INDEX IF NOT EXISTS idx_fossils_created ON fossils(created_at DESC);
 `;

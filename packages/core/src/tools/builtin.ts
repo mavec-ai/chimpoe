@@ -26,6 +26,7 @@ import {
   listReputationEvents,
   recordReputationEvent,
 } from "../reputation/index.ts";
+import { getFossilByAgent, listFossils, searchFossils } from "../fossils/index.ts";
 
 export const shellTool: Tool = tool({
   description:
@@ -430,6 +431,66 @@ export function builtinTools(agentId?: string): Record<string, Tool> {
           peerName: match.name,
           eventType: event.eventType,
           delta: event.delta,
+        };
+      },
+    });
+    tools.read_my_fossil = tool({
+      description:
+        "Read your own fossil (auto-distilled when you die, capturing your SOUL + top memories). " +
+        "Useful to review what of yours will outlive you. Returns null if you haven't been distilled yet.",
+      inputSchema: z.object({}),
+      execute: async () => {
+        const fossil = await getFossilByAgent(agentId);
+        if (!fossil)
+          return { found: false, message: "No fossil yet — fossils are distilled on death." };
+        return {
+          found: true,
+          sizeBytes: fossil.content.length,
+          keywords: fossil.keywords,
+          excerpt: fossil.content.slice(0, 4000),
+        };
+      },
+    });
+    tools.search_fossils = tool({
+      description:
+        "Search the fossil record of dead agents (your ancestors and lineage peers). " +
+        "Fossils are distilled knowledge from agents that came before you. " +
+        "Use this BEFORE asking a peer or user for help — your ancestors may have already solved it.",
+      inputSchema: z.object({
+        query: z.string().describe("Keywords to search across all fossils"),
+        limit: z.number().min(1).max(20).optional().describe("Max results (default 5)"),
+      }),
+      execute: async ({ query, limit }) => {
+        const results = await searchFossils(query, { limit: limit ?? 5 });
+        return {
+          count: results.length,
+          fossils: results.map((f) => ({
+            id: f.id,
+            fromAgent: f.agentName,
+            generation: f.generation,
+            keywords: f.keywords.slice(0, 6),
+            excerpt: f.content.slice(0, 1500),
+          })),
+        };
+      },
+    });
+    tools.list_fossils = tool({
+      description: "List all available fossils (dead agents' distilled knowledge).",
+      inputSchema: z.object({
+        limit: z.number().min(1).max(50).optional().describe("Max results (default 20)"),
+      }),
+      execute: async ({ limit }) => {
+        const results = await listFossils(limit ?? 20);
+        return {
+          count: results.length,
+          fossils: results.map((f) => ({
+            id: f.id,
+            fromAgent: f.agentName,
+            generation: f.generation,
+            keywords: f.keywords.slice(0, 6),
+            sizeBytes: f.content.length,
+            distilledAt: new Date(f.createdAt).toISOString().slice(0, 10),
+          })),
         };
       },
     });

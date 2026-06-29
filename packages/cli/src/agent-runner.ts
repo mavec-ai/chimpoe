@@ -3,6 +3,7 @@ import {
   chargeInference,
   checkInbox,
   createAgent,
+  distillAgent,
   getAgent,
   loadConfig,
   markRead,
@@ -79,12 +80,23 @@ async function handleMessage(
       `burned ${charge.costTokens} tokens (balance ${charge.newBalance}, tier ${charge.newTier}${charge.tierChanged ? " CHANGED" : ""})`,
     );
     if (charge.newTier === "dead") {
-      log(agentRecord.name, "budget exhausted, suspending");
+      log(agentRecord.name, "budget exhausted, distilling fossil before suspend");
+      try {
+        const distill = await distillAgent(agentId);
+        log(
+          agentRecord.name,
+          `fossil distilled (${distill.sizeBytes} bytes, ${distill.keywords.length} keywords)`,
+        );
+      } catch (err) {
+        const reason = err instanceof Error ? err.message : String(err);
+        log(agentRecord.name, `fossil distill failed: ${reason}`);
+      }
       await markRead(message.id);
       await sendMessage({
         fromAgentId: agentId,
         toAgentId: message.fromAgentId,
-        content: "(I have run out of budget and must suspend. Top up via 'chimpoe fund'.)",
+        content:
+          "(I have run out of budget and must suspend. A fossil of my knowledge has been distilled for descendants.)",
         type: "result",
         inReplyTo: message.id,
       });
