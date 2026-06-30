@@ -13,7 +13,18 @@ import {
   sendMessage,
   updateAgentStatus,
 } from "@chimpoe/core";
-import { getChimpoeHome, getConfigPath } from "@chimpoe/types";
+import { getAgentHome, getChimpoeHome, getConfigPath } from "@chimpoe/types";
+import { join } from "node:path";
+import { rm } from "node:fs/promises";
+
+async function cleanupPid(agentId: string): Promise<void> {
+  const pidPath = join(getAgentHome(agentId), ".pid");
+  try {
+    await rm(pidPath, { force: true });
+  } catch {
+    // best effort
+  }
+}
 
 const POLL_INTERVAL_MS = 1500;
 
@@ -103,6 +114,7 @@ async function handleMessage(
         inReplyTo: message.id,
       });
       await updateAgentStatus(agentId, "dead", "dead");
+      await cleanupPid(agentId);
       process.exit(0);
     }
   }
@@ -158,6 +170,7 @@ async function main(): Promise<void> {
     stopped = true;
     log(agentRecord.name, `received ${signal}, shutting down`);
     await updateAgentStatus(agentId, "idle");
+    await cleanupPid(agentId);
     process.exit(0);
   };
   process.on("SIGTERM", () => void shutdown("SIGTERM"));
