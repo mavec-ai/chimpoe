@@ -18,6 +18,18 @@ const PROVIDERS: Array<{ value: Provider; label: string; hint: string; defaultMo
     defaultModel: "claude-haiku-4-5",
   },
   {
+    value: "glm",
+    label: "GLM (Z.AI regular)",
+    hint: "glm-4.6, glm-5.2 — pay per token, needs ZAI_API_KEY",
+    defaultModel: "glm-4.6",
+  },
+  {
+    value: "glm-coding",
+    label: "GLM Coding Plan (Z.AI)",
+    hint: "subscription endpoint — needs ZAI_API_KEY (coding plan key)",
+    defaultModel: "glm-4.6",
+  },
+  {
     value: "ollama",
     label: "Ollama (local)",
     hint: "free, no API key needed",
@@ -31,6 +43,8 @@ const PROVIDER_ENV_KEY: Record<Provider, string> = {
   google: "GOOGLE_API_KEY",
   xai: "XAI_API_KEY",
   groq: "GROQ_API_KEY",
+  glm: "ZAI_API_KEY",
+  "glm-coding": "ZAI_API_KEY",
   ollama: "",
 };
 

@@ -35,7 +35,15 @@ export function getEnvPath(): string {
   return join(getChimpoeHome(), ".env");
 }
 
-export type Provider = "openai" | "anthropic" | "google" | "xai" | "groq" | "ollama";
+export type Provider =
+  | "openai"
+  | "anthropic"
+  | "google"
+  | "xai"
+  | "groq"
+  | "ollama"
+  | "glm"
+  | "glm-coding";
 
 export interface ChimpoeConfig {
   version: string;

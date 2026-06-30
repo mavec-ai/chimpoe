@@ -3,6 +3,7 @@ import { calculateTier, getBudgetSnapshot } from "../economy/index.ts";
 import { calculateReputation } from "../reputation/index.ts";
 import { appendReflection } from "../soul/index.ts";
 import { sendMessage } from "../messaging/index.ts";
+import { checkSelfCull, DEFAULT_THRESHOLDS, type SelfCullDecision } from "../selection/index.ts";
 
 export type HeartbeatResult =
   | { kind: "no-op"; reason: string }
@@ -20,12 +21,17 @@ export interface HeartbeatSchedule {
   budgetCheckEveryTicks: number;
   reflectEveryMs: number;
   idleWarnAfterMs: number;
+  selfCullEveryTicks?: number;
 }
 
 export const DEFAULT_SCHEDULE: HeartbeatSchedule = {
-  budgetCheckEveryTicks: 8,
-  reflectEveryMs: 6 * 60 * 60 * 1000,
-  idleWarnAfterMs: 30 * 60 * 1000,
+  budgetCheckEveryTicks: Number.parseInt(process.env.CHIMPOE_BUDGET_CHECK_TICKS ?? "8", 10),
+  reflectEveryMs: Number.parseInt(
+    process.env.CHIMPOE_REFLECT_INTERVAL_MS ?? String(6 * 60 * 60 * 1000),
+    10,
+  ),
+  idleWarnAfterMs: Number.parseInt(process.env.CHIMPOE_IDLE_WARN_MS ?? String(30 * 60 * 1000), 10),
+  selfCullEveryTicks: Number.parseInt(process.env.CHIMPOE_CULL_CHECK_TICKS ?? "40", 10),
 };
 
 export async function runBudgetCheck(
@@ -88,6 +94,7 @@ export interface HeartbeatTick {
   budget?: HeartbeatResult;
   reflection?: HeartbeatResult;
   idle?: HeartbeatResult;
+  selfCull?: SelfCullDecision;
 }
 
 export async function runHeartbeatTick(
@@ -103,5 +110,12 @@ export async function runHeartbeatTick(
     out.reflection = await runReflection(ctx);
   }
   out.idle = await runIdleCheck(ctx);
+  if (
+    schedule.selfCullEveryTicks &&
+    options.tickCount > 0 &&
+    options.tickCount % schedule.selfCullEveryTicks === 0
+  ) {
+    out.selfCull = await checkSelfCull(ctx.agentId, DEFAULT_THRESHOLDS);
+  }
   return out;
 }

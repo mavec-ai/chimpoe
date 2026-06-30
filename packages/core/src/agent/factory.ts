@@ -12,7 +12,6 @@ export interface CreateAgentOptions {
   extraInstructions?: string;
   recentMemoryCount?: number;
 }
-
 export async function createAgent({
   config,
   tools = {},
@@ -42,13 +41,18 @@ export async function createAgent({
     ...tools,
   };
 
+  const tier = config.tier ?? "normal";
+  const maxOutputTokens = tier === "conservation" || tier === "dormant" ? 2048 : 4096;
+
   return new ToolLoopAgent({
     model: resolved.model,
     instructions: systemPrompt,
     tools: allTools,
+    maxOutputTokens,
+    stopWhen: ({ steps }) =>
+      steps.length >= (tier === "conservation" ? 5 : tier === "dormant" ? 3 : 12),
   });
 }
-
 function buildSystemPrompt(args: {
   genesis: string;
   soul: string;

@@ -27,6 +27,30 @@ async function cleanupPid(agentId: string): Promise<void> {
 }
 
 const POLL_INTERVAL_MS = 1500;
+const MAX_RETRIES = 3;
+const RETRY_COOLDOWN_MS = 10_000;
+const TRANSIENT_ERROR_PATTERNS = [
+  "socket connection was closed",
+  "timeout",
+  "timed out",
+  "ECONNRESET",
+  "ECONNREFUSED",
+  "ETIMEDOUT",
+  "ENOTFOUND",
+  "fetch failed",
+  "network",
+  "socket hang up",
+  "connect ETIMEDOUT",
+  "operation timed out",
+  "Cannot connect to API",
+];
+
+function isTransientError(err: unknown): boolean {
+  const msg = err instanceof Error ? err.message.toLowerCase() : String(err).toLowerCase();
+  return TRANSIENT_ERROR_PATTERNS.some((p) => msg.includes(p.toLowerCase()));
+}
+
+const retryCounts = new Map<string, number>();
 
 async function loadEnvFile(): Promise<void> {
   const envPath = `${getChimpoeHome()}/.env`;
@@ -58,6 +82,25 @@ async function handleMessage(
 ): Promise<void> {
   const agentRecord = await getAgent(agentId);
   if (!agentRecord) throw new Error(`Agent ${agentId} vanished mid-run`);
+
+  const MIN_PROCESSING_BUDGET = 500;
+  if (agentRecord.budgetTokens < MIN_PROCESSING_BUDGET) {
+    log(
+      agentRecord.name,
+      `insufficient budget (${agentRecord.budgetTokens} < ${MIN_PROCESSING_BUDGET}), refusing message`,
+    );
+    await markRead(message.id);
+    await sendMessage({
+      fromAgentId: agentId,
+      toAgentId: message.fromAgentId,
+      content: `(Insufficient budget (${agentRecord.budgetTokens} tokens). Fund me via 'chimpoe fund <id> <amount>'.)`,
+      type: "result",
+      inReplyTo: message.id,
+    });
+    await updateAgentStatus(agentId, "dead", "dead");
+    await cleanupPid(agentId);
+    process.exit(0);
+  }
 
   log(agentRecord.name, `← message from ${fromName}: ${message.content.slice(0, 100)}`);
 
@@ -133,6 +176,7 @@ async function handleMessage(
     reason: `Replied to ${fromName}`,
     relatedId: message.id,
   });
+  retryCounts.delete(message.id);
 
   log(agentRecord.name, `→ reply to ${fromName}: ${responseText.slice(0, 100)}`);
 }
@@ -193,6 +237,23 @@ async function main(): Promise<void> {
           });
         } catch (err) {
           const reason = err instanceof Error ? err.message : String(err);
+          const transient = isTransientError(err);
+          const retries = retryCounts.get(msg.id) ?? 0;
+
+          if (transient && retries < MAX_RETRIES) {
+            retryCounts.set(msg.id, retries + 1);
+            log(
+              agentRecord.name,
+              `transient error on ${msg.id.slice(0, 8)} (retry ${retries + 1}/${MAX_RETRIES}): ${reason}`,
+            );
+            // DON'T mark as read — message stays unread, will be retried next poll
+            // But wait longer before next poll to let API recover
+            await Bun.sleep(RETRY_COOLDOWN_MS);
+            continue;
+          }
+
+          // Permanent error or max retries exhausted
+          retryCounts.delete(msg.id);
           log(agentRecord.name, `error handling message ${msg.id.slice(0, 8)}: ${reason}`);
           await markRead(msg.id);
           await sendMessage({
@@ -229,6 +290,23 @@ async function main(): Promise<void> {
       }
       if (tick.idle?.kind === "idle_too_long") {
         log(agentRecord.name, `heartbeat: ${tick.idle.note}`);
+      }
+      if (tick.selfCull?.shouldSelfCull) {
+        log(
+          agentRecord.name,
+          `heartbeat: SELF-CULL triggered — ${tick.selfCull.reason} (rep=${tick.selfCull.reputation}, bal=${tick.selfCull.budget})`,
+        );
+        try {
+          const { distillAgent } = await import("@chimpoe/core");
+          const distill = await distillAgent(agentId);
+          log(agentRecord.name, `fossil distilled (${distill.sizeBytes}b) before self-cull`);
+        } catch (err) {
+          const reason = err instanceof Error ? err.message : String(err);
+          log(agentRecord.name, `fossil distill failed during self-cull: ${reason}`);
+        }
+        await updateAgentStatus(agentId, "dead", "dead");
+        await cleanupPid(agentId);
+        process.exit(0);
       }
     } catch (err) {
       const reason = err instanceof Error ? err.message : String(err);

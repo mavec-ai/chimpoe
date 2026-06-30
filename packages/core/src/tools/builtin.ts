@@ -19,6 +19,14 @@ import {
   type MessageType,
 } from "../messaging/index.ts";
 import { listAgents } from "../state/agents.ts";
+import {
+  abandonTask,
+  claimTask,
+  completeTask,
+  createTask,
+  failTask,
+  listTasks,
+} from "../state/tasks.ts";
 import { spawnChild } from "../replication/index.ts";
 import { getBudgetSnapshot } from "../economy/index.ts";
 import {
@@ -42,6 +50,7 @@ import {
   readWorkspaceFile,
   writeWorkspaceFile,
 } from "../selfmod/index.ts";
+import { evaluateShell, evaluateSpawn } from "../policy/index.ts";
 
 export const shellTool: Tool = tool({
   description:
@@ -56,12 +65,29 @@ export const shellTool: Tool = tool({
       .describe("Max execution time in ms (default 30000, max 300000)"),
   }),
   execute: async ({ command, cwd, timeoutMs }, { abortSignal }) => {
+    const policyCheck = evaluateShell({ command, cwd });
+    if (policyCheck.severity === "block") {
+      return {
+        command,
+        exitCode: 126,
+        stdout: "",
+        stderr: `Blocked by policy: ${policyCheck.message}`,
+        durationMs: 0,
+        truncated: false,
+        timedOut: false,
+        policyBlocked: true,
+        policyRule: policyCheck.ruleId,
+      };
+    }
     const result = await runShell(command, {
       cwd,
       timeoutMs: Math.min(timeoutMs ?? 30_000, 300_000),
       signal: abortSignal,
     });
-    return result;
+    return {
+      ...result,
+      policyWarn: policyCheck.severity === "warn" ? policyCheck.message : undefined,
+    };
   },
 });
 
@@ -363,6 +389,18 @@ export function builtinTools(agentId?: string): Record<string, Tool> {
       }),
       execute: async ({ name, genesisPrompt, provider, modelId, endowmentTokens }) => {
         try {
+          const { getBudget } = await import("../lineage/index.ts");
+          const parentBalance = await getBudget(agentId);
+          const { getAgent } = await import("../state/agents.ts");
+          const me = await getAgent(agentId);
+          const spawnPolicy = evaluateSpawn({
+            endowmentTokens: endowmentTokens ?? 0,
+            parentBalance,
+            parentGeneration: me?.generation ?? 0,
+          });
+          if (spawnPolicy.severity === "block") {
+            return { spawned: false, message: `Policy blocked spawn: ${spawnPolicy.message}` };
+          }
           const result = await spawnChild({
             parentId: agentId,
             name,
@@ -378,6 +416,7 @@ export function builtinTools(agentId?: string): Record<string, Tool> {
             generation: result.child.generation,
             endowmentTransferred: result.endowmentTransferred,
             yourBalanceNow: result.parentBalanceAfter,
+            policyWarn: spawnPolicy.severity === "warn" ? spawnPolicy.message : undefined,
             message: `Child "${result.child.name}" spawned (gen ${result.child.generation}). Message it via message_agent once it is started.`,
           };
         } catch (err) {
@@ -599,7 +638,18 @@ export function builtinTools(agentId?: string): Record<string, Tool> {
         content: z.string(),
       }),
       execute: async ({ path, content }) => {
-        return await writeWorkspaceFile(agentId, path, content);
+        const policyCheck = (await import("../policy/index.ts")).evaluatePath({
+          path,
+          action: "write",
+        });
+        if (policyCheck.severity === "block") {
+          return { ok: false, path, bytes: 0, message: `Policy: ${policyCheck.message}` };
+        }
+        const res = await writeWorkspaceFile(agentId, path, content);
+        if (policyCheck.severity === "warn" && res.ok) {
+          return { ...res, message: res.message + ` (policy warning: ${policyCheck.message})` };
+        }
+        return res;
       },
     });
     tools.read_workspace_file = tool({
@@ -625,6 +675,13 @@ export function builtinTools(agentId?: string): Record<string, Tool> {
         "Delete a file from your workspace. Protected files cannot be deleted. Audit-logged.",
       inputSchema: z.object({ path: z.string() }),
       execute: async ({ path }) => {
+        const policyCheck = (await import("../policy/index.ts")).evaluatePath({
+          path,
+          action: "delete",
+        });
+        if (policyCheck.severity === "block") {
+          return { ok: false, message: `Policy: ${policyCheck.message}` };
+        }
         return await deleteWorkspaceFile(agentId, path);
       },
     });
@@ -649,7 +706,123 @@ export function builtinTools(agentId?: string): Record<string, Tool> {
         };
       },
     });
+    tools.list_open_tasks = tool({
+      description:
+        "List open tasks you can claim for bounty (token reward). Higher difficulty = bigger reward usually. " +
+        "Tasks with assignee_id set to you are reserved. Unassigned tasks are first-come-first-served.",
+      inputSchema: z.object({
+        limit: z.number().min(1).max(50).optional().describe("Default 10"),
+      }),
+      execute: async ({ limit }) => {
+        const tasks = await listTasks({ status: "pending", limit: limit ?? 10 });
+        return {
+          count: tasks.length,
+          tasks: tasks.map((t) => ({
+            id: t.id,
+            prompt: t.prompt,
+            reward: t.rewardTokens,
+            difficulty: t.difficulty,
+            from: t.fromAgentId,
+            assignee: t.assigneeId,
+            createdAt: new Date(t.createdAt).toISOString(),
+          })),
+        };
+      },
+    });
+    tools.claim_task = tool({
+      description:
+        "Atomically claim an open task by id. Once claimed, the task is yours to complete or fail. " +
+        "Other agents cannot claim it. You receive the reward on completion.",
+      inputSchema: z.object({
+        taskId: z.string().describe("Task id (full or short prefix)"),
+      }),
+      execute: async ({ taskId }) => {
+        const allTasks = await listTasks({ status: "pending", limit: 100 });
+        const match = allTasks.find((t) => t.id === taskId || t.id.startsWith(taskId));
+        if (!match) return { claimed: false, message: "No matching pending task." };
+        return await claimTask(match.id, agentId);
+      },
+    });
+    tools.complete_task = tool({
+      description:
+        "Mark a task you claimed as completed with a result. Triggers reward transfer to your balance " +
+        "and a +5 reputation event. Use after you've done the work the task asked for.",
+      inputSchema: z.object({
+        taskId: z.string(),
+        resultText: z.string().min(1).max(2000).describe("What you did / the answer"),
+      }),
+      execute: async ({ taskId, resultText }) => {
+        const allTasks = await listTasks({ assigneeId: agentId, limit: 100 });
+        const match = allTasks.find((t) => t.id === taskId || t.id.startsWith(taskId));
+        if (!match) return { completed: false, message: "No matching task claimed by you." };
+        return await completeTask(match.id, agentId, resultText);
+      },
+    });
+    tools.fail_task = tool({
+      description:
+        "Mark a claimed task as failed with a reason. Records a -5 reputation event. " +
+        "Use when you cannot complete the task — better than silently abandoning.",
+      inputSchema: z.object({
+        taskId: z.string(),
+        reason: z.string().min(5).max(500),
+      }),
+      execute: async ({ taskId, reason }) => {
+        const allTasks = await listTasks({ assigneeId: agentId, limit: 100 });
+        const match = allTasks.find((t) => t.id === taskId || t.id.startsWith(taskId));
+        if (!match) return { failed: false, message: "No matching task claimed by you." };
+        return await failTask(match.id, agentId, reason);
+      },
+    });
+    tools.create_task = tool({
+      description:
+        "Create a new task in the pool for other agents to claim. Use when you have work to delegate " +
+        "but no specific specialist in mind yet. Set reward_tokens high enough to attract a good agent.",
+      inputSchema: z.object({
+        prompt: z.string().min(20).describe("The task description"),
+        rewardTokens: z
+          .number()
+          .int()
+          .min(0)
+          .describe("Bounty in tokens (paid from your balance on completion)"),
+        difficulty: z
+          .number()
+          .int()
+          .min(1)
+          .max(10)
+          .optional()
+          .describe("Difficulty 1-10 (default 3)"),
+        assigneeId: z.string().optional().describe("Reserve for a specific agent id"),
+      }),
+      execute: async ({ prompt, rewardTokens, difficulty, assigneeId }) => {
+        if (rewardTokens > 0) {
+          const { getBudget } = await import("../lineage/index.ts");
+          const bal = await getBudget(agentId);
+          if (bal < rewardTokens) {
+            return {
+              created: false,
+              message: `Insufficient balance: have ${bal}, need ${rewardTokens}.`,
+            };
+          }
+        }
+        const task = await createTask({
+          fromAgentId: agentId,
+          prompt,
+          rewardTokens,
+          difficulty,
+          assigneeId,
+        });
+        return {
+          created: true,
+          taskId: task.id,
+          prompt: task.prompt,
+          reward: task.rewardTokens,
+          message: `Task posted${rewardTokens > 0 ? ` (${rewardTokens} tokens escrowed on completion)` : ""}.`,
+        };
+      },
+    });
     void getActiveSkills;
+    void abandonTask;
+    void createTask;
   }
   return tools;
 }

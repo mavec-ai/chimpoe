@@ -19,6 +19,18 @@ const PROVIDER_OPTIONS: ProviderOption[] = [
     hint: "claude-opus-4, claude-haiku-4, ...",
     defaultModel: "claude-haiku-4-5",
   },
+  {
+    value: "glm",
+    label: "GLM (Z.AI regular)",
+    hint: "glm-4.6, glm-5.2",
+    defaultModel: "glm-4.6",
+  },
+  {
+    value: "glm-coding",
+    label: "GLM Coding Plan",
+    hint: "subscription endpoint",
+    defaultModel: "glm-4.6",
+  },
   { value: "ollama", label: "Ollama (local)", hint: "free, no API key", defaultModel: "llama3.2" },
 ];
 

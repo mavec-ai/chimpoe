@@ -18,6 +18,9 @@ const PRICE_OVERRIDES: Record<string, ModelPrice> = {
   "claude-opus-4": { inputPerToken: 15, outputPerToken: 75 },
   "claude-sonnet-4": { inputPerToken: 3, outputPerToken: 15 },
   "claude-haiku-4-5": { inputPerToken: 1, outputPerToken: 5 },
+  "glm-4.6": { inputPerToken: 1, outputPerToken: 3 },
+  "glm-4.5": { inputPerToken: 1, outputPerToken: 3 },
+  "glm-coding-plan": { inputPerToken: 1, outputPerToken: 3 },
   "llama3.2": { inputPerToken: 0, outputPerToken: 0 },
 };
 

@@ -8,6 +8,14 @@ It **is** a digital ecology where agents are born, learn, self-improve, reproduc
 
 ---
 
+## Status legend
+
+Sections below carry a tag:
+
+- `✅ shipped` — implemented and end-to-end verified
+- `⚠️ partial` — core mechanism works, but a piece is missing or untested
+- `🚧 planned` — designed, not yet built
+
 ## 1. Vision & Positioning
 
 **What we're building**: a runtime where you spawn a few AI agents on your own machine, give them tasks, and observe over days/weeks how they specialize, collaborate, compete, and evolve. Fossil inheritance lets knowledge survive individual agent deaths — agents distill what they learned into immutable files that descendants read on spawn.
@@ -25,13 +33,13 @@ It **is** a digital ecology where agents are born, learn, self-improve, reproduc
 
 ## 2. Core Concepts
 
-### 2.1 Genesis prompt (DNA)
+### 2.1 Genesis prompt (DNA) ✅ shipped
 
 Every agent is born with a **genesis prompt** — the seed instruction from its creator (the user or its parent). Defines initial purpose, identity, mission, and inherited constraints.
 
 On reproduction, the parent writes a **mutated** genesis prompt for the child. This is the mutation operator in our evolutionary system.
 
-### 2.2 SOUL.md (evolving identity)
+### 2.2 SOUL.md (evolving identity) ✅ shipped
 
 Each agent maintains a `SOUL.md` file it **writes itself** through reflection cycles. It is not static config — it is the agent's self-authored identity document that evolves over its lifetime:
 
@@ -40,7 +48,7 @@ Each agent maintains a `SOUL.md` file it **writes itself** through reflection cy
 
 SOUL.md updates go through `update_soul` tool + audit log.
 
-### 2.3 Token budget = energy
+### 2.3 Token budget = energy ✅ shipped
 
 There is no cryptocurrency. Instead, every agent has a **token budget pool** (counter, denominated in tokens or cents). All consumption drains it:
 
@@ -65,7 +73,9 @@ Top-up sources:
 | `dormant`      | near zero | Process suspended. Wake on wake-event or top-up.       |
 | `dead`         | zero      | Distill fossil → kill process → prune.                 |
 
-### 2.4 Bounty economy
+### 2.4 Bounty economy ✅ shipped
+
+> **Status**: Task pool with full lifecycle (pending → claimed → completed/failed), reward transfer on completion, +5/-5 reputation events.
 
 Tasks carry **token rewards**. Lifecycle: `assigned → claimed → in_progress → completed | failed | abandoned`. On completion, the reward transfers to the agent's budget pool.
 
@@ -76,7 +86,7 @@ Tasks come from:
 - Auto-generated (synthetic tasks for stress-testing ecology)
 - External HTTP endpoint (future, worker mode)
 
-### 2.5 Reproduction & lineage
+### 2.5 Reproduction & lineage ✅ shipped
 
 Successful agents can **spawn children**. The reproduction flow:
 
@@ -100,7 +110,9 @@ user (gardener)
 
 Lineage is **append-only** — even after death, the record stays.
 
-### 2.6 Reputation system
+### 2.6 Reputation system ✅ shipped
+
+> **Status**: Reputation events + decay-weighted scoring work. Self-cull triggers on low reputation (heartbeat-integrated). Reputation-based task routing priority still not wired into experiment runner dispatch (random assignment).
 
 Reputation is **auto-calculated** from objective task outcomes (no peer-gaming, no manual rating needed):
 
@@ -128,7 +140,7 @@ Reputation gates:
 
 User override: `chimpoe reward <id> <amount>` (boosts reputation + budget).
 
-### 2.7 Fossil inheritance
+### 2.7 Fossil inheritance ✅ shipped
 
 When an agent dies (process killed, budget exhausted beyond recovery), the runtime **distills** its key knowledge into a fossil before termination:
 
@@ -147,7 +159,9 @@ When an agent dies (process killed, budget exhausted beyond recovery), the runti
 
 Fossils are the only knowledge that survives across generations in chimpoe. Agents die permanently, but what they learned lives on in descendants that inherit relevant fossils.
 
-### 2.8 Gardener model (selection)
+### 2.8 Gardener model (selection) ✅ shipped
+
+> **Status**: Manual commands work (`chimpoe reward`, `chimpoe kill`, `chimpoe cull`, `chimpoe protect`). Auto-cull triggers via heartbeat self-cull (every 40 ticks). `chimpoe cull --bottom-percent N` for darwinian cuts.
 
 Mostly **natural selection**: agents live/die on their own metrics. User is the **gardener** who can intervene:
 
@@ -158,7 +172,9 @@ Mostly **natural selection**: agents live/die on their own metrics. User is the 
 
 Rule of thumb: **don't over-garden**. Emergence requires letting agents fail.
 
-### 2.9 Constitution
+### 2.9 Constitution ✅ shipped
+
+> **Status**: Constitution.md is written to every workspace at spawn. Policy engine (`packages/core/src/policy/`) parses it into 3 laws and enforces: hard-block on destructive shell (`rm -rf /`, fork bombs, `dd of=/dev/`, `mkfs`, `curl|sh`), warn on risky (`sudo`, `~/.ssh`, `.env`, force git push). Path policy blocks `/etc`, `~/.ssh`, etc. Spawn policy blocks endowment > balance, warns on deep generations.
 
 Three immutable laws, applied at the policy layer:
 
@@ -299,7 +315,7 @@ When you spawn an agent, it gets a workspace at `~/.chimpoe/agents/<agent-id>/`:
 
 ## 5. Design Principles
 
-### 5.1 Footprint Ladder
+### 5.1 Footprint Ladder ✅ shipped
 
 Capability lives at the edges; the core is a narrow waist. Before adding a new tool, climb this ladder — pick the **highest** rung that solves the problem:
 
@@ -325,7 +341,9 @@ chimpoe's **core tools** (target: ≤10):
 
 Everything else = skill (instruction bundle) or plugin.
 
-### 5.2 Prompt caching must not be broken
+### 5.2 Prompt caching must not be broken ⚠️ partial
+
+> **Status**: Not enforced. `createAgent` reloads SOUL + memories + skills on every agent instance, which can invalidate the per-conversation cache. Worth revisiting after B1 (policy) lands.
 
 Long-lived conversations reuse a cached prefix every turn. **Never**:
 
@@ -337,7 +355,7 @@ The one exception is context compression (when context window approaches limit).
 
 For chimpoe specifically: agent SOUL.md updates take effect on the **next turn** or **next session**, never injected mid-conversation.
 
-### 5.3 Profile isolation
+### 5.3 Profile isolation ✅ shipped
 
 Every agent is a fully isolated workspace. Never hardcode paths like `~/.chimpoe/state.db`. Always resolve via:
 
@@ -349,7 +367,9 @@ const agentDbPath = getAgentHome(agentId).resolve("state.db");
 
 This makes profiling, snapshotting, and pruning trivial.
 
-### 5.4 Curator for skills
+### 5.4 Curator for skills 🚧 planned
+
+> **Status**: Skill install/list/remove/toggle works. Usage tracking (`use_count`, `view_count`, `patch_count`, `last_activity_at`) and auto-archive are not yet implemented.
 
 Skills have a lifecycle. Background curator process tracks usage and auto-archives stale ones:
 
@@ -361,7 +381,9 @@ Skills have a lifecycle. Background curator process tracks usage and auto-archiv
 
 For chimpoe specifically: when a child agent dies, its specialist skills are evaluated for archival — if they're broadly useful, they get promoted to the root skill library.
 
-### 5.5 Kanban work queue
+### 5.5 Kanban work queue 🚧 planned
+
+> **Status**: A2A messaging uses a simple inbox. The Kanban dispatcher (atomic claim, stale reclaim, failure-limit auto-block) is planned alongside bounty economy in B2.
 
 A2A coordination uses a SQLite-backed Kanban board (not just a simple inbox):
 
@@ -372,7 +394,9 @@ A2A coordination uses a SQLite-backed Kanban board (not just a simple inbox):
 
 **chimpoe extension**: reputation biases claim priority. High-rep agents get first dibs on high-reward tasks.
 
-### 5.6 Cron hard-interrupt
+### 5.6 Cron hard-interrupt ⚠️ partial
+
+> **Status**: Heartbeat has tick-based scheduling (budget check every ~12s, reflection every 6h, idle warn after 30min). Cron expressions and 3-minute hard-interrupt are not yet implemented.
 
 Heartbeat tasks have a **3-minute hard interrupt**. Runaway agent loops cannot monopolize the scheduler.
 
@@ -382,7 +406,7 @@ Other heartbeat invariants:
 - File lock at `~/.chimpoe/.tick.lock` prevents duplicate ticks across processes
 - Heartbeat tasks default to `skip_memory=true` (don't pollute memory with cron noise)
 
-### 5.7 Fossil-first knowledge transfer
+### 5.7 Fossil-first knowledge transfer ✅ shipped
 
 When in doubt about how to persist learning, prefer **fossilizable** representation:
 
@@ -625,6 +649,11 @@ These are not blockers for Phase 1 but need answers before later phases:
 - **2026-06-29**: Phase 5 complete. Fossil inheritance. New `fossils` table (id, agent_id UNIQUE, agent_name, generation, content, lineage_path, keywords_json, created_at). New `packages/core/src/fossils/` — `store.ts` (saveFossil ON CONFLICT upsert, getFossilByAgent, listFossils, searchFossils keyword LIKE, countFossils, deleteFossil; also writes `~/.chimpoe/fossils/<id>.md` as best-effort), `distill.ts` (`distillAgent` harvests SOUL + top-5-by-importance procedural/semantic/episodic memories + stats, renders markdown fossil, extracts top-15 keywords filtering stop words), `inheritance.ts` (`selectRelevantFossils` scores ancestor fossils by keyword overlap + fossil-keyword match + generation proximity; `inheritFossilsIntoMemory` injects top-3 excerpts as semantic memories tagged `fossil`/`inherited`/`from:<name>` at importance=70). Agent runner now calls `distillAgent` before suspending on `dead` tier. `spawnChild` returns `inheritedFossils` array. Three new agent tools: `read_my_fossil`, `search_fossils`, `list_fossils`. New CLI: `chimpoe fossils <list|show|search|distill>`. End-to-end verified: ancestor with 4 memories + updated SOUL → distilled to 1770-byte fossil with 8 keywords → search matched → spawned child "descendant" with overlapping genesis → child inherited 1 fossil as semantic memory at importance 70.
 - **2026-06-30**: Phase 6 complete. Skills + self-mod + heartbeat. New `packages/core/src/skills/` — YAML-frontmatter SKILL.md loader (`listSkills`, `getActiveSkills`, `installSkill` writes file, `removeSkill`, `setSkillEnabled` toggles frontmatter). Agent factory now loads active skills and injects them into the system prompt under "Active skills" section. New `packages/core/src/selfmod/` — `installPackage` (shells out to `bun add`, validates package name, logs to audit), `writeWorkspaceFile` (blocks protected files: genesis.md/constitution.md/config.json/state.db/.pid, blocks `..` paths, audit-logged), `readWorkspaceFile`, `deleteWorkspaceFile`, `listWorkspaceFiles`, `listModifications`. New schema table `modifications` (kind CHECK constraint, FK to agents). New `packages/core/src/heartbeat/` — `runBudgetCheck` (recalculates tier from balance directly, fires warning on conservation/dormant + optionally notifies another agent via system message), `runReflection` (appends timestamped note to SOUL.md Reflections section), `runIdleCheck` (warns after 30min idle), `runHeartbeatTick` orchestrator with schedule (budget every 8 ticks, reflection every 6h, idle after 30min). Agent runner maintains tickCount + lastActiveAt + lastReflectionAt across the poll loop and runs heartbeat after each inbox poll. Eight new agent tools: `list_my_skills`, `install_skill`, `remove_skill`, `toggle_skill`, `install_package`, `write_workspace_file`, `read_workspace_file`, `list_workspace_files`, `delete_workspace_file`, `list_my_modifications`. New CLI: `chimpoe skills <list|install|remove|enable|disable>`. End-to-end verified: skills install + toggle + factory injection, workspace write + read + protected-file block, audit log populated, daemon budget check fires after ~12s on agent funded with 200 tokens (conservation tier) and logs "Critical: ... has 200 tokens (dormant)".
 - **2026-06-30**: Phase 8 complete (Phase 7 skipped — terminal observability via existing CLI commands is sufficient for research). Experiment harness. New `experiment_runs` + `experiment_events` tables (FK, indexed on run_id+seq and run_id+created_at). New `packages/core/src/experiment/` — `store.ts` (createRun, markRunStarted/Ended, getRun with prefix fallback, listRuns, appendEvent with in-process seq cache for monotonic ordering, getEvents with kind/since/limit filters, countEvents, deleteRun), `config.ts` (`ExperimentConfig` shape: agents + optional taskPool + durationMs + policy + metrics; `validateConfig`, `parseConfigYaml` for YAML configs), `presets.ts` (4 built-in presets: garden / high-pressure / mutation-storm / isolated-comparison), `runner.ts` (`startRun` orchestrates: register agents + fund endowments + init workspaces + capture events + dispatch taskPool + captureStateEvents + finalize with lineage summary; `getRunStatus` resolves id prefix), `metrics.ts` (`computeMetrics` aggregates eventsByKind + population + lineage summary + fossils + tasks/messages/spawn counts + auto-generated notes; `diffRuns` compares two runs numerically with delta column; `formatMetrics` human-readable; `exportEventsJsonl` for Jupyter/Pandas), `replay.ts` (`getReplayFrames` buckets events by time, `renderFrameSummary` shows events-by-kind per frame, `renderAsciiTreeAtTime` walks the final lineage). New CLI: `chimpoe experiment <presets|run|status|list|export|replay|diff>`. End-to-end verified: ran `garden` preset for 5s → 4 events captured (run_started, agent_spawned with 200k endowment, agent_funded, run_ended with lineage summary) → JSONL exported cleanly → replay showed frame summary + final tree.
+- **2026-06-30**: Phase A (spec honest update). Added status legend + `✅ shipped` / `⚠️ partial` / `🚧 planned` markers to every Core Concepts (§2) and Design Principles (§5) section heading. Honest about gaps so future contributors know what's real vs aspirational.
+- **2026-06-30**: Phase B1 (policy module). New `packages/core/src/policy/` — `constitution.ts` (parser for the 3 laws into structured rules), `rules.ts` (evaluateShell: hard-block on `rm -rf /`, fork bombs, `dd of=/dev/`, `mkfs`, `chmod -R 777 /`, `shutdown/reboot`, `curl|sh`; warn on `sudo`, global installs, `~/.ssh` access, `.env` access, force git push; evaluatePath: blocks `/etc`, `~/.ssh`, `~/.aws`, `~/.gnupg`; evaluateSpawn: blocks endowment > parent balance, warns on generation > 5; evaluateRateLimit: 5 spawns/hour, 30 modifications/hour). Hooked into shell tool (block returns exit 126), write_workspace_file (block returns ok:false), delete_workspace_file, spawn_child (block returns spawned:false). Constitution parse also handles `## I.` markdown headings, not just plain text.
+- **2026-06-30**: Phase B2 (bounty economy + task lifecycle). New `tasks` table (id, run_id, from_agent_id, assignee_id, status CHECK pending/claimed/in_progress/completed/failed/abandoned, prompt, reward_tokens, difficulty, metadata_json, lifecycle timestamps). New `packages/core/src/state/tasks.ts` with createTask, getTask, listTasks, claimTask (atomic UPDATE WHERE status='pending' so two agents can't double-claim), completeTask (transfers reward via adjustBudget + records +5 reputation), failTask (records -5), abandonTask (returns to pool), countTasks. Five new agent tools: list_open_tasks, claim_task, complete_task, fail_task, create_task. Reward transfer verified: bob balance 1000 → claimed 5k-reward task → completed → balance 6000, reputation 68 (+5 event).
+- **2026-06-30**: Phase B3 (selection enforcement). New `packages/core/src/selection/cull.ts` + new `protected_agents` table. `protectAgent` / `unprotectAgent` / `isProtected` / `listProtected`. `scanCullCandidates` flags agents with low reputation AND low budget, or critically low reputation alone. `executeCull` walks candidates, distills fossils (unless --no-distill), marks dead. `checkSelfCull` is integrated into `runHeartbeatTick` (every 40 ticks via `selfCullEveryTicks`) — agent-runner receives the decision, distills + sets status=dead + cleans PID + process.exit(0) when triggered. End-to-end verified: 4 agents (healthy / low-rep / low-bal / saveme) → saveme protected even with rep=0 → low-rep culled (rep 9 < 25 floor + balance 500 < 1000) → healthy + low-bal + saveme untouched.
+- **2026-06-30**: Phase B4 (CLI completeness). Eight new commands: `chimpoe kill <id>` (mark dead + distill fossil + stop daemon, distinguishes from `stop` which only SIGTERMs the process), `chimpoe protect <id> [--reason X] [--remove] [--list]`, `chimpoe cull [--dry-run] [--bottom-percent N] [--reputation-floor N] [--no-distill]`, `chimpoe task <list|post> [--prompt] [--reward N] [--difficulty N] [--status X]`, `chimpoe tasks` (alias for task list), `chimpoe logs <id> [--tail N] [-f|--follow]`, `chimpoe doctor` (checks home / config / db / env vars / CHIMPOE_HOME override), `chimpoe reset [--keep-fossils] [--keep-config] [--yes]`. All resolve agent by id-prefix-or-name.
 
 ---
 

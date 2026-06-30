@@ -41,6 +41,7 @@
         "@ai-sdk/openai": "^4.0.2",
         "@chimpoe/types": "workspace:*",
         "ai": "^7.0.4",
+        "yaml": "^2.4.0",
         "zod": "^3.25.0",
       },
     },

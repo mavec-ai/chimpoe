@@ -32,6 +32,14 @@ const main = defineCommand({
     fossils: () => import("./commands/fossils.ts").then((m) => m.default),
     skills: () => import("./commands/skills.ts").then((m) => m.default),
     experiment: () => import("./commands/experiment.ts").then((m) => m.default),
+    kill: () => import("./commands/kill.ts").then((m) => m.default),
+    protect: () => import("./commands/protect.ts").then((m) => m.default),
+    cull: () => import("./commands/cull.ts").then((m) => m.default),
+    task: () => import("./commands/task.ts").then((m) => m.default),
+    tasks: () => import("./commands/task.ts").then((m) => m.default),
+    logs: () => import("./commands/logs.ts").then((m) => m.default),
+    doctor: () => import("./commands/doctor.ts").then((m) => m.default),
+    reset: () => import("./commands/reset.ts").then((m) => m.default),
   },
 });
 

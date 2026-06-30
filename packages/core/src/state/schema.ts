@@ -148,4 +148,32 @@ CREATE TABLE IF NOT EXISTS experiment_events (
 CREATE INDEX IF NOT EXISTS idx_events_run_seq ON experiment_events(run_id, seq);
 CREATE INDEX IF NOT EXISTS idx_events_run_time ON experiment_events(run_id, created_at);
 CREATE INDEX IF NOT EXISTS idx_events_kind ON experiment_events(kind);
+
+CREATE TABLE IF NOT EXISTS tasks (
+  id TEXT PRIMARY KEY,
+  run_id TEXT,
+  from_agent_id TEXT NOT NULL DEFAULT 'user',
+  assignee_id TEXT,
+  status TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending','claimed','in_progress','completed','failed','abandoned')),
+  prompt TEXT NOT NULL,
+  reward_tokens INTEGER NOT NULL DEFAULT 0,
+  difficulty INTEGER NOT NULL DEFAULT 3,
+  metadata_json TEXT,
+  created_at INTEGER NOT NULL,
+  claimed_at INTEGER,
+  completed_at INTEGER,
+  result_text TEXT,
+  FOREIGN KEY (assignee_id) REFERENCES agents(id) ON DELETE SET NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_tasks_status ON tasks(status, created_at);
+CREATE INDEX IF NOT EXISTS idx_tasks_assignee ON tasks(assignee_id, status);
+CREATE INDEX IF NOT EXISTS idx_tasks_run ON tasks(run_id);
+
+CREATE TABLE IF NOT EXISTS protected_agents (
+  agent_id TEXT PRIMARY KEY,
+  reason TEXT,
+  protected_at INTEGER NOT NULL,
+  FOREIGN KEY (agent_id) REFERENCES agents(id) ON DELETE CASCADE
+);
 `;

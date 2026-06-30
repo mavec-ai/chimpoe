@@ -12,6 +12,21 @@ export {
   type TransferResult,
 } from "./agents.ts";
 export {
+  createTask,
+  getTask,
+  listTasks,
+  claimTask,
+  completeTask,
+  failTask,
+  abandonTask,
+  countTasks,
+  type TaskStatus,
+  type Task,
+  type CreateTaskInput,
+  type ClaimResult,
+  type CompleteResult,
+} from "./tasks.ts";
+export {
   recordTurn,
   listTurns,
   listTurnsBySession,
