@@ -1,7 +1,6 @@
 #!/usr/bin/env bun
 import {
   abandonAllClaimedByAgent,
-  chargeInference,
   checkInbox,
   createAgent,
   DEFAULT_SCHEDULE,
@@ -76,6 +75,9 @@ function log(agentName: string, msg: string): void {
   console.log(`[${ts}] [${agentName}] ${msg}`);
 }
 
+let cachedAgent: Awaited<ReturnType<typeof createAgent>> | null = null;
+let cachedAgentId: string | null = null;
+
 async function handleMessage(
   agentId: string,
   fromName: string,
@@ -106,63 +108,58 @@ async function handleMessage(
 
   log(agentRecord.name, `← message from ${fromName}: ${message.content.slice(0, 100)}`);
 
-  const agent = await createAgent({
-    config: agentRecord,
-    extraInstructions:
-      `You just received a message from another agent (${fromName}). ` +
-      "Respond directly to the content. Keep it concise and actionable. " +
-      "If the message asks you to do work, do it and report back. " +
-      "If you don't understand or can't help, say so plainly.",
-  });
+  if (!cachedAgent || cachedAgentId !== agentId) {
+    cachedAgent = await createAgent({
+      config: agentRecord,
+      extraInstructions:
+        `You just received a message from another agent (${fromName}). ` +
+        "Respond directly to the content. Keep it concise and actionable. " +
+        "If the message asks you to do work, do it and report back. " +
+        "If you don't understand or can't help, say so plainly.",
+    });
+    cachedAgentId = agentId;
+  }
+  cachedAgent.budget.remaining = agentRecord.budgetTokens;
 
   const prompt =
     message.type === "task"
       ? `Task assignment from ${fromName}:\n\n${message.content}`
       : `Message from ${fromName}:\n\n${message.content}`;
 
-  const result = await agent.generate({
-    prompt,
-  });
-
+  const result = await cachedAgent.agent.generate({ prompt });
   const responseText = result.text || "(no response)";
-  const usage = await result.totalUsage;
-  if (usage && (usage.inputTokens || usage.outputTokens)) {
-    const charge = await chargeInference({
-      agentId,
-      modelId: agentRecord.modelId,
-      inputTokens: usage.inputTokens ?? 0,
-      outputTokens: usage.outputTokens ?? 0,
-    });
-    log(
-      agentRecord.name,
-      `burned ${charge.costTokens} tokens (balance ${charge.newBalance}, tier ${charge.newTier}${charge.tierChanged ? " CHANGED" : ""})`,
-    );
-    if (charge.newTier === "dead") {
-      log(agentRecord.name, "budget exhausted, distilling fossil before suspend");
-      try {
-        const distill = await distillAgent(agentId);
-        log(
-          agentRecord.name,
-          `fossil distilled (${distill.sizeBytes} bytes, ${distill.keywords.length} keywords)`,
-        );
-      } catch (err) {
-        const reason = err instanceof Error ? err.message : String(err);
-        log(agentRecord.name, `fossil distill failed: ${reason}`);
-      }
-      await markRead(message.id);
-      await sendMessage({
-        fromAgentId: agentId,
-        toAgentId: message.fromAgentId,
-        content:
-          "(I have run out of budget and must suspend. A fossil of my knowledge has been distilled for descendants.)",
-        type: "result",
-        inReplyTo: message.id,
-      });
-      await updateAgentStatus(agentId, "dead", "dead");
-      await abandonAllClaimedByAgent(agentId);
-      await cleanupPid(agentId);
-      process.exit(0);
+
+  const finalBalance = cachedAgent.budget.remaining;
+  log(
+    agentRecord.name,
+    `burned ${agentRecord.budgetTokens - Math.max(0, finalBalance)} tokens (balance ${Math.max(0, finalBalance)})`,
+  );
+
+  if (finalBalance <= 0) {
+    log(agentRecord.name, "budget exhausted, distilling fossil before suspend");
+    try {
+      const distill = await distillAgent(agentId);
+      log(
+        agentRecord.name,
+        `fossil distilled (${distill.sizeBytes} bytes, ${distill.keywords.length} keywords)`,
+      );
+    } catch (err) {
+      const reason = err instanceof Error ? err.message : String(err);
+      log(agentRecord.name, `fossil distill failed: ${reason}`);
     }
+    await markRead(message.id);
+    await sendMessage({
+      fromAgentId: agentId,
+      toAgentId: message.fromAgentId,
+      content:
+        "(I have run out of budget and must suspend. A fossil of my knowledge has been distilled for descendants.)",
+      type: "result",
+      inReplyTo: message.id,
+    });
+    await updateAgentStatus(agentId, "dead", "dead");
+    await abandonAllClaimedByAgent(agentId);
+    await cleanupPid(agentId);
+    process.exit(0);
   }
 
   await markRead(message.id);

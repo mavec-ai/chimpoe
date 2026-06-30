@@ -3,7 +3,6 @@ import color from "picocolors";
 import * as readline from "node:readline/promises";
 import { stdin, stdout } from "node:process";
 import {
-  chargeInference,
   createAgent,
   getRecentHistory,
   loadConfig,
@@ -36,7 +35,7 @@ async function loadEnvFile(): Promise<void> {
 
 async function persistentRepl(agentConfig: AgentConfig): Promise<void> {
   const sessionId = randomUUID();
-  const agent = await createAgent({ config: agentConfig });
+  const { agent, budget } = await createAgent({ config: agentConfig });
 
   await updateAgentStatus(agentConfig.id, "running");
 
@@ -83,19 +82,7 @@ async function persistentRepl(agentConfig: AgentConfig): Promise<void> {
           assistantText += chunk;
         }
         const usage = await result.totalUsage;
-        let chargeInfo: { costTokens: number; newBalance: number; newTier: string } | null = null;
-        if (usage && (usage.inputTokens || usage.outputTokens)) {
-          const charge = await chargeInference({
-            agentId: agentConfig.id,
-            modelId: agentConfig.modelId,
-            inputTokens: usage.inputTokens ?? 0,
-            outputTokens: usage.outputTokens ?? 0,
-          });
-          chargeInfo = charge;
-        }
-        const balanceStr = chargeInfo
-          ? color.dim(` bal=${chargeInfo.newBalance} tier=${chargeInfo.newTier}`)
-          : "";
+        const balanceStr = color.dim(` bal=${Math.max(0, budget.remaining)}`);
         const usageStr =
           usage && (usage.inputTokens || usage.outputTokens)
             ? color.dim(
@@ -139,7 +126,7 @@ async function persistentRepl(agentConfig: AgentConfig): Promise<void> {
 
 async function ephemeralTui(agentConfig: AgentConfig): Promise<void> {
   const { runAgentTUI } = await import("@ai-sdk/tui");
-  const agent = await createAgent({ config: agentConfig });
+  const { agent } = await createAgent({ config: agentConfig });
   await runAgentTUI({
     title: `chimpoe (${color.cyan(agentConfig.modelId)})`,
     agent: agent as never,
