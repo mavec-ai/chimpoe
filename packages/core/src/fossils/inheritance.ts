@@ -1,9 +1,55 @@
-import { searchFossils, type Fossil } from "./store.ts";
+import { getFossilByAgent, searchFossils, type Fossil } from "./store.ts";
 import { getAncestors } from "../lineage/index.ts";
 import { writeMemory } from "../memory/index.ts";
 
 const INHERITANCE_TOP_N = 3;
 const MAX_EXCERPT_BYTES = 2000;
+const STOP_WORDS = new Set([
+  "the",
+  "and",
+  "for",
+  "are",
+  "but",
+  "not",
+  "you",
+  "all",
+  "any",
+  "can",
+  "her",
+  "was",
+  "one",
+  "our",
+  "out",
+  "has",
+  "have",
+  "from",
+  "they",
+  "your",
+  "what",
+  "with",
+  "this",
+  "that",
+  "been",
+  "said",
+  "each",
+  "which",
+  "their",
+  "will",
+  "into",
+  "them",
+  "than",
+  "then",
+  "who",
+  "when",
+  "where",
+  "use",
+  "using",
+  "yourself",
+  "very",
+  "just",
+  "also",
+  "into",
+]);
 
 export interface InheritedFossil {
   fossilId: string;
@@ -19,14 +65,18 @@ export async function selectRelevantFossils(
   ancestorIds: string[],
   topN = INHERITANCE_TOP_N,
 ): Promise<InheritedFossil[]> {
-  const keywords = genesisPrompt
-    .toLowerCase()
-    .split(/[^a-z0-9]+/i)
-    .filter((w) => w.length >= 4);
+  const keywords = Array.from(
+    new Set(
+      genesisPrompt
+        .toLowerCase()
+        .split(/[^a-z0-9]+/i)
+        .filter((w) => w.length >= 4 && !STOP_WORDS.has(w)),
+    ),
+  );
 
   if (keywords.length === 0 || ancestorIds.length === 0) return [];
 
-  const query = keywords.slice(0, 5).join(" ");
+  const query = keywords.slice(0, 12).join(" ");
   const matches: Fossil[] = [];
   for (const ancestorId of ancestorIds) {
     const found = await searchFossils(query, {
@@ -37,10 +87,22 @@ export async function selectRelevantFossils(
   }
 
   if (matches.length === 0) {
-    return [];
+    for (const ancestorId of ancestorIds) {
+      const direct = await getFossilByAgent(ancestorId);
+      if (direct) matches.push(direct);
+    }
   }
 
-  const scored = matches.map((f) => ({
+  if (matches.length === 0) return [];
+
+  const seen = new Set<string>();
+  const unique = matches.filter((m) => {
+    if (seen.has(m.id)) return false;
+    seen.add(m.id);
+    return true;
+  });
+
+  const scored = unique.map((f) => ({
     fossilId: f.id,
     fromAgentName: f.agentName,
     generation: f.generation,
