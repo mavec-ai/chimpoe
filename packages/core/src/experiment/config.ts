@@ -56,6 +56,15 @@ export function validateConfig(input: unknown): ExperimentConfig {
 }
 
 export function parseConfigYaml(text: string): ExperimentConfig {
+  const trimmed = text.trim();
+  if (trimmed.startsWith("{") || trimmed.startsWith("[")) {
+    try {
+      const json = JSON.parse(trimmed);
+      return validateConfig(json);
+    } catch {
+      // fall through to YAML
+    }
+  }
   const yaml = parseSimpleYaml(text);
   return validateConfig(yaml);
 }

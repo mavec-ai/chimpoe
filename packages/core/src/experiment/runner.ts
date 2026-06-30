@@ -92,6 +92,23 @@ export async function startRun(options: RunOptions): Promise<RunResult> {
     }
   }
 
+  const { spawnAgent, stopAgent } = await import("../process/index.ts");
+  const { getChimpoeHome } = await import("@chimpoe/types");
+  const chimpoeHome = getChimpoeHome();
+  for (const id of agentIds) {
+    try {
+      await spawnAgent({ agentId: id, chimpoeHome });
+    } catch (err) {
+      const reason = err instanceof Error ? err.message : String(err);
+      await appendEvent({
+        runId: run.id,
+        kind: "note",
+        agentId: id,
+        payload: { note: `daemon start failed: ${reason}` },
+      });
+    }
+  }
+
   const totalEvents = await pollAndDispatch({
     runId: run.id,
     config,
@@ -100,6 +117,14 @@ export async function startRun(options: RunOptions): Promise<RunResult> {
     signal: options.signal,
     taskIntervalMs: options.taskIntervalMs,
   });
+
+  for (const id of agentIds) {
+    try {
+      await stopAgent(id);
+    } catch {
+      // best effort
+    }
+  }
 
   const durationMs = Date.now() - startMs;
   const summary = await getLineageSummary();
@@ -142,7 +167,7 @@ async function pollAndDispatch(args: {
       const task = tasks[taskIdx]!;
       taskIdx++;
       const target = task.assignTo
-        ? resolveTargetAgent(task.assignTo, agentIds)
+        ? await resolveTargetAgentByName(task.assignTo, agentIds)
         : pickAny(agentIds);
       if (target) {
         await sendMessage({
@@ -199,6 +224,19 @@ function resolveTargetAgent(nameOrId: string, agentIds: string[]): string | null
     if (id.startsWith(nameOrId)) return id;
   }
   return null;
+}
+
+async function resolveTargetAgentByName(
+  nameOrId: string,
+  agentIds: string[],
+): Promise<string | null> {
+  const direct = resolveTargetAgent(nameOrId, agentIds);
+  if (direct) return direct;
+  const agents = await listAgents();
+  const match = agents.find(
+    (a) => a.name.toLowerCase() === nameOrId.toLowerCase() && agentIds.includes(a.id),
+  );
+  return match?.id ?? null;
 }
 
 function pickAny(agentIds: string[]): string | null {
