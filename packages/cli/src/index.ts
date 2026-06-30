@@ -31,6 +31,7 @@ const main = defineCommand({
     reward: () => import("./commands/reward.ts").then((m) => m.default),
     fossils: () => import("./commands/fossils.ts").then((m) => m.default),
     skills: () => import("./commands/skills.ts").then((m) => m.default),
+    experiment: () => import("./commands/experiment.ts").then((m) => m.default),
   },
 });
 

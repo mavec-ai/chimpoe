@@ -118,4 +118,34 @@ CREATE TABLE IF NOT EXISTS modifications (
 
 CREATE INDEX IF NOT EXISTS idx_mods_agent_time ON modifications(agent_id, created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_mods_kind ON modifications(kind);
+
+CREATE TABLE IF NOT EXISTS experiment_runs (
+  id TEXT PRIMARY KEY,
+  name TEXT NOT NULL,
+  preset TEXT,
+  config_json TEXT NOT NULL,
+  status TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending','running','completed','failed','aborted')),
+  started_at INTEGER,
+  ended_at INTEGER,
+  created_at INTEGER NOT NULL,
+  summary_json TEXT
+);
+
+CREATE INDEX IF NOT EXISTS idx_runs_status ON experiment_runs(status);
+CREATE INDEX IF NOT EXISTS idx_runs_created ON experiment_runs(created_at DESC);
+
+CREATE TABLE IF NOT EXISTS experiment_events (
+  id TEXT PRIMARY KEY,
+  run_id TEXT NOT NULL,
+  seq INTEGER NOT NULL,
+  kind TEXT NOT NULL,
+  agent_id TEXT,
+  payload_json TEXT,
+  created_at INTEGER NOT NULL,
+  FOREIGN KEY (run_id) REFERENCES experiment_runs(id) ON DELETE CASCADE
+);
+
+CREATE INDEX IF NOT EXISTS idx_events_run_seq ON experiment_events(run_id, seq);
+CREATE INDEX IF NOT EXISTS idx_events_run_time ON experiment_events(run_id, created_at);
+CREATE INDEX IF NOT EXISTS idx_events_kind ON experiment_events(kind);
 `;
