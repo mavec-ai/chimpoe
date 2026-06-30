@@ -19,6 +19,7 @@ export {
   completeTask,
   failTask,
   abandonTask,
+  abandonAllClaimedByAgent,
   countTasks,
   type TaskStatus,
   type Task,

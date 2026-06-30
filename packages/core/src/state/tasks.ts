@@ -279,3 +279,14 @@ export async function countTasks(status?: TaskStatus): Promise<number> {
     return row.n;
   });
 }
+
+export async function abandonAllClaimedByAgent(agentId: string): Promise<number> {
+  return withDb((db) => {
+    const info = db
+      .prepare(
+        "UPDATE tasks SET status = 'pending', assignee_id = NULL, claimed_at = NULL WHERE assignee_id = ? AND status IN ('claimed', 'in_progress')",
+      )
+      .run(agentId);
+    return info.changes;
+  });
+}

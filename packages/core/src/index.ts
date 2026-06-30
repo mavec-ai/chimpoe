@@ -66,6 +66,7 @@ export {
   completeTask,
   failTask,
   abandonTask,
+  abandonAllClaimedByAgent,
   countTasks,
 } from "./state/index.ts";
 export {

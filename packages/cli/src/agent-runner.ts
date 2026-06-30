@@ -1,5 +1,6 @@
 #!/usr/bin/env bun
 import {
+  abandonAllClaimedByAgent,
   chargeInference,
   checkInbox,
   createAgent,
@@ -98,6 +99,7 @@ async function handleMessage(
       inReplyTo: message.id,
     });
     await updateAgentStatus(agentId, "dead", "dead");
+    await abandonAllClaimedByAgent(agentId);
     await cleanupPid(agentId);
     process.exit(0);
   }
@@ -157,6 +159,7 @@ async function handleMessage(
         inReplyTo: message.id,
       });
       await updateAgentStatus(agentId, "dead", "dead");
+      await abandonAllClaimedByAgent(agentId);
       await cleanupPid(agentId);
       process.exit(0);
     }
@@ -305,6 +308,7 @@ async function main(): Promise<void> {
           log(agentRecord.name, `fossil distill failed during self-cull: ${reason}`);
         }
         await updateAgentStatus(agentId, "dead", "dead");
+        await abandonAllClaimedByAgent(agentId);
         await cleanupPid(agentId);
         process.exit(0);
       }

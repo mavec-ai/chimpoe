@@ -1,6 +1,12 @@
 import { defineCommand } from "citty";
 import color from "picocolors";
-import { distillAgent, getAgent, listAgents, updateAgentStatus } from "@chimpoe/core";
+import {
+  abandonAllClaimedByAgent,
+  distillAgent,
+  getAgent,
+  listAgents,
+  updateAgentStatus,
+} from "@chimpoe/core";
 import { resolveAgent } from "../utils/resolve.ts";
 
 export default defineCommand({
@@ -53,6 +59,8 @@ export default defineCommand({
       }
     }
     await updateAgentStatus(me.id, "dead", "dead");
+    const abandoned = await abandonAllClaimedByAgent(me.id);
+    if (abandoned > 0) console.log(color.dim(`  ${abandoned} task(s) returned to pool`));
     console.log(color.red("✝") + ` killed ${color.cyan(me.name)} (${me.id.slice(0, 8)})`);
     if (args.reason) console.log(color.dim(`  reason: ${args.reason}`));
   },
