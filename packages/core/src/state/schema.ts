@@ -104,4 +104,18 @@ CREATE TABLE IF NOT EXISTS fossils (
 
 CREATE INDEX IF NOT EXISTS idx_fossils_generation ON fossils(generation);
 CREATE INDEX IF NOT EXISTS idx_fossils_created ON fossils(created_at DESC);
+
+CREATE TABLE IF NOT EXISTS modifications (
+  id TEXT PRIMARY KEY,
+  agent_id TEXT NOT NULL,
+  kind TEXT NOT NULL CHECK (kind IN ('install_package', 'remove_package', 'write_file', 'edit_file', 'delete_file', 'skill_install', 'skill_remove', 'skill_toggle')),
+  target TEXT NOT NULL,
+  details_json TEXT,
+  status TEXT NOT NULL DEFAULT 'applied',
+  created_at INTEGER NOT NULL,
+  FOREIGN KEY (agent_id) REFERENCES agents(id) ON DELETE CASCADE
+);
+
+CREATE INDEX IF NOT EXISTS idx_mods_agent_time ON modifications(agent_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_mods_kind ON modifications(kind);
 `;

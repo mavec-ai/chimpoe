@@ -3,11 +3,13 @@ import {
   chargeInference,
   checkInbox,
   createAgent,
+  DEFAULT_SCHEDULE,
   distillAgent,
   getAgent,
   loadConfig,
   markRead,
   recordReputationEvent,
+  runHeartbeatTick,
   sendMessage,
   updateAgentStatus,
 } from "@chimpoe/core";
@@ -148,6 +150,9 @@ async function main(): Promise<void> {
   log(agentRecord.name, `daemon started (pid ${process.pid})`);
 
   let stopped = false;
+  let tickCount = 0;
+  let lastActiveAt = Date.now();
+  let lastReflectionAt = Date.now();
   const shutdown = async (signal: string) => {
     if (stopped) return;
     stopped = true;
@@ -159,8 +164,10 @@ async function main(): Promise<void> {
   process.on("SIGINT", () => void shutdown("SIGINT"));
 
   while (!stopped) {
+    tickCount++;
     try {
       const inbox = await checkInbox(agentId, { unreadOnly: true, limit: 10 });
+      if (inbox.length > 0) lastActiveAt = Date.now();
       for (const msg of inbox) {
         const sender = await getAgent(msg.fromAgentId);
         const fromName = sender?.name ?? msg.fromAgentId.slice(0, 8);
@@ -193,6 +200,26 @@ async function main(): Promise<void> {
     } catch (err) {
       const reason = err instanceof Error ? err.message : String(err);
       log(agentRecord.name, `poll error: ${reason}`);
+    }
+    try {
+      const tick = await runHeartbeatTick(
+        { agentId, lastActiveAt, pollIntervalMs: POLL_INTERVAL_MS },
+        DEFAULT_SCHEDULE,
+        { tickCount, lastReflectionAt },
+      );
+      if (tick.budget?.kind === "budget_warning") {
+        log(agentRecord.name, `heartbeat: ${tick.budget.message}`);
+      }
+      if (tick.reflection?.kind === "reflection") {
+        lastReflectionAt = Date.now();
+        log(agentRecord.name, "heartbeat: wrote reflection to SOUL.md");
+      }
+      if (tick.idle?.kind === "idle_too_long") {
+        log(agentRecord.name, `heartbeat: ${tick.idle.note}`);
+      }
+    } catch (err) {
+      const reason = err instanceof Error ? err.message : String(err);
+      log(agentRecord.name, `heartbeat error: ${reason}`);
     }
     await Bun.sleep(POLL_INTERVAL_MS);
   }

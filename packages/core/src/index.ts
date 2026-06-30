@@ -155,3 +155,37 @@ export {
   type DistillResult,
   type InheritedFossil,
 } from "./fossils/index.ts";
+export {
+  listSkills,
+  getActiveSkills,
+  installSkill,
+  removeSkill,
+  setSkillEnabled,
+  renderSkill,
+  type Skill,
+  type InstallSkillInput,
+} from "./skills/index.ts";
+export {
+  installPackage,
+  writeWorkspaceFile,
+  readWorkspaceFile,
+  deleteWorkspaceFile,
+  listWorkspaceFiles,
+  listModifications,
+  type ModificationKind,
+  type ModificationRecord,
+  type InstallPackageResult,
+  type WriteFileResult,
+  type WorkspaceEntry,
+} from "./selfmod/index.ts";
+export {
+  runBudgetCheck,
+  runReflection,
+  runIdleCheck,
+  runHeartbeatTick,
+  DEFAULT_SCHEDULE,
+  type HeartbeatResult,
+  type HeartbeatContext,
+  type HeartbeatSchedule,
+  type HeartbeatTick,
+} from "./heartbeat/index.ts";

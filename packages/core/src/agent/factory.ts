@@ -3,6 +3,7 @@ import { resolveModel } from "../inference/resolver.ts";
 import { builtinTools } from "../tools/index.ts";
 import { readSoul } from "../soul/index.ts";
 import { formatMemoryForPrompt, listMemories, type MemoryRecord } from "../memory/index.ts";
+import { getActiveSkills, renderSkill, type Skill } from "../skills/index.ts";
 import type { AgentConfig } from "@chimpoe/types";
 
 export interface CreateAgentOptions {
@@ -20,17 +21,19 @@ export async function createAgent({
 }: CreateAgentOptions): Promise<ToolLoopAgent> {
   const resolved = resolveModel(config.provider, config.modelId);
 
-  const [soul, recentMemories] = await Promise.all([
+  const [soul, recentMemories, activeSkills] = await Promise.all([
     config.id === "ephemeral" ? Promise.resolve("") : readSoul(config.id).catch(() => ""),
     config.id === "ephemeral"
       ? Promise.resolve([])
       : listMemories(config.id, { limit: recentMemoryCount }).catch(() => []),
+    config.id === "ephemeral" ? Promise.resolve([]) : getActiveSkills(config.id).catch(() => []),
   ]);
 
   const systemPrompt = buildSystemPrompt({
     genesis: config.genesisPrompt,
     soul,
     memories: recentMemories,
+    skills: activeSkills,
     extra: extraInstructions,
   });
 
@@ -50,6 +53,7 @@ function buildSystemPrompt(args: {
   genesis: string;
   soul: string;
   memories: MemoryRecord[];
+  skills: Skill[];
   extra?: string;
 }): string {
   const parts: string[] = [args.genesis.trim()];
@@ -58,6 +62,12 @@ function buildSystemPrompt(args: {
       "\n\n---\n\nYour SOUL.md (your self-authored identity document; use update_soul_section " +
         "and append_reflection tools to evolve it over time):\n\n" +
         args.soul.trim(),
+    );
+  }
+  if (args.skills.length > 0) {
+    parts.push(
+      "\n\n---\n\nActive skills (procedural knowledge packages — use them when relevant):\n\n" +
+        args.skills.map(renderSkill).join("\n\n"),
     );
   }
   if (args.memories.length > 0) {

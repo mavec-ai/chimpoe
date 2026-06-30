@@ -27,6 +27,21 @@ import {
   recordReputationEvent,
 } from "../reputation/index.ts";
 import { getFossilByAgent, listFossils, searchFossils } from "../fossils/index.ts";
+import {
+  getActiveSkills,
+  installSkill,
+  listSkills,
+  removeSkill,
+  setSkillEnabled,
+} from "../skills/index.ts";
+import {
+  deleteWorkspaceFile,
+  installPackage,
+  listModifications,
+  listWorkspaceFiles,
+  readWorkspaceFile,
+  writeWorkspaceFile,
+} from "../selfmod/index.ts";
 
 export const shellTool: Tool = tool({
   description:
@@ -242,7 +257,12 @@ export function builtinTools(agentId?: string): Record<string, Tool> {
       }),
       execute: async ({ toAgentId, content, type }) => {
         const all = await listAgents();
-        const match = all.find((a) => a.id === toAgentId || a.id.startsWith(toAgentId));
+        const match = all.find(
+          (a) =>
+            a.id === toAgentId ||
+            a.id.startsWith(toAgentId) ||
+            a.name.toLowerCase() === toAgentId.toLowerCase(),
+        );
         if (!match) {
           return { sent: false, message: `No agent matching "${toAgentId}".` };
         }
@@ -416,7 +436,12 @@ export function builtinTools(agentId?: string): Record<string, Tool> {
       }),
       execute: async ({ peerId, eventType, reason }) => {
         const all = await listAgents();
-        const match = all.find((a) => a.id === peerId || a.id.startsWith(peerId));
+        const match = all.find(
+          (a) =>
+            a.id === peerId ||
+            a.id.startsWith(peerId) ||
+            a.name.toLowerCase() === peerId.toLowerCase(),
+        );
         if (!match) return { recorded: false, message: `No peer matching "${peerId}".` };
         if (match.id === agentId) {
           return { recorded: false, message: "Cannot record reputation for yourself." };
@@ -494,6 +519,137 @@ export function builtinTools(agentId?: string): Record<string, Tool> {
         };
       },
     });
+    tools.list_my_skills = tool({
+      description:
+        "List your installed skills. Active skills are injected into your context automatically. " +
+        "Disabled skills are kept on disk but not loaded.",
+      inputSchema: z.object({}),
+      execute: async () => {
+        const skills = await listSkills(agentId);
+        return {
+          count: skills.length,
+          skills: skills.map((s) => ({
+            name: s.name,
+            description: s.description,
+            version: s.version,
+            tags: s.tags,
+            enabled: s.enabled,
+            sizeBytes: s.sizeBytes,
+          })),
+        };
+      },
+    });
+    tools.install_skill = tool({
+      description:
+        "Install a new skill (procedural knowledge package) into your workspace. " +
+        "Skills are markdown files with YAML frontmatter. Active skills are injected into " +
+        "your system prompt on next load. Use this to capture reusable procedures you've learned.",
+      inputSchema: z.object({
+        name: z.string().min(1).max(60).describe("Skill name (kebab-case)"),
+        body: z.string().min(20).describe("Skill content in markdown"),
+        description: z.string().max(120).optional(),
+        tags: z.array(z.string()).optional(),
+      }),
+      execute: async ({ name, body, description, tags }) => {
+        const skill = await installSkill({ agentId, name, body, description, tags });
+        return {
+          installed: true,
+          name: skill.name,
+          filePath: skill.filePath,
+        };
+      },
+    });
+    tools.remove_skill = tool({
+      description: "Remove a skill from your workspace by name.",
+      inputSchema: z.object({ name: z.string() }),
+      execute: async ({ name }) => {
+        const r = await removeSkill(agentId, name);
+        return r;
+      },
+    });
+    tools.toggle_skill = tool({
+      description: "Enable or disable a skill without removing it.",
+      inputSchema: z.object({
+        name: z.string(),
+        enabled: z.boolean(),
+      }),
+      execute: async ({ name, enabled }) => {
+        return await setSkillEnabled(agentId, name, enabled);
+      },
+    });
+    tools.install_package = tool({
+      description:
+        "Install an npm package into your workspace via bun add. Use this when you need a " +
+        "library to do your work (e.g. zod for validation). Logged to your audit trail.",
+      inputSchema: z.object({
+        packageName: z.string().min(1).max(200),
+        dev: z.boolean().optional().describe("Install as devDependency"),
+      }),
+      execute: async ({ packageName, dev }) => {
+        return await installPackage(agentId, packageName, { dev });
+      },
+    });
+    tools.write_workspace_file = tool({
+      description:
+        "Write a file inside your own workspace (~/.chimpoe/agents/<your-id>/). " +
+        "Protected files (genesis.md, constitution.md, config.json, state.db, .pid) cannot be written. " +
+        "Paths must be relative and cannot escape the workspace. All writes are audit-logged.",
+      inputSchema: z.object({
+        path: z.string().describe("Relative path within your workspace"),
+        content: z.string(),
+      }),
+      execute: async ({ path, content }) => {
+        return await writeWorkspaceFile(agentId, path, content);
+      },
+    });
+    tools.read_workspace_file = tool({
+      description: "Read a file from your own workspace.",
+      inputSchema: z.object({
+        path: z.string().describe("Relative path within your workspace"),
+      }),
+      execute: async ({ path }) => {
+        return await readWorkspaceFile(agentId, path);
+      },
+    });
+    tools.list_workspace_files = tool({
+      description: "List files in your own workspace, optionally in a subdirectory.",
+      inputSchema: z.object({
+        subdir: z.string().optional().describe("Subdirectory (default '.')"),
+      }),
+      execute: async ({ subdir }) => {
+        return await listWorkspaceFiles(agentId, subdir ?? ".");
+      },
+    });
+    tools.delete_workspace_file = tool({
+      description:
+        "Delete a file from your workspace. Protected files cannot be deleted. Audit-logged.",
+      inputSchema: z.object({ path: z.string() }),
+      execute: async ({ path }) => {
+        return await deleteWorkspaceFile(agentId, path);
+      },
+    });
+    tools.list_my_modifications = tool({
+      description:
+        "Show your audit trail — every package install, file write, skill change, etc. " +
+        "Use this to review what you've changed about your own environment.",
+      inputSchema: z.object({
+        limit: z.number().min(1).max(50).optional().describe("Default 20"),
+      }),
+      execute: async ({ limit }) => {
+        const mods = await listModifications(agentId, limit ?? 20);
+        return {
+          count: mods.length,
+          modifications: mods.map((m) => ({
+            kind: m.kind,
+            target: m.target,
+            status: m.status,
+            at: new Date(m.createdAt).toISOString(),
+            details: m.details,
+          })),
+        };
+      },
+    });
+    void getActiveSkills;
   }
   return tools;
 }
